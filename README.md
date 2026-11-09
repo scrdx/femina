@@ -38,7 +38,7 @@ femina/
 ├── frontend/           React 18 + Vite + TS 前端
 ├── scripts/            可选的测试辅助脚本（造数据 / 冒烟测试）
 ├── Dockerfile          三阶段构建：node → maven → JRE8
-├── docker-compose.yml  app 服务；数据库连接全部由环境变量决定
+├── docker-compose.yml  app 服务；跑 ghcr.io 上的 CI 镜像，数据库连接全部由环境变量决定
 ├── docker-compose.db.yml
 │                       可选覆盖文件：附带专属 MySQL 8 实例（模式 A）
 └── .env.example        部署环境变量模板（两种数据库模式）
@@ -81,34 +81,36 @@ cd ../backend && mvn spring-boot:run
 
 ## NAS / Docker 部署
 
-compose 拆为两个文件：`docker-compose.yml`（只有 app，数据库连接全走环境变量）
-和 `docker-compose.db.yml`（附带一个专属 MySQL 8 实例）。按你的数据库情况二选一：
+`docker-compose.yml` 跑的是 GitHub Actions 构建好的镜像 `ghcr.io/scrdx/femina`
+（公开可拉、无需登录，amd64 + arm64 双架构，Intel 和 ARM 机型的 NAS 都能跑），
+**部署机上不需要源码、不需要编译**。只要把 `docker-compose.yml` 和一份照
+`.env.example` 写好的 `.env` 放到 NAS 上某个目录里就行。
+
+> 宿主机端口默认 **8090**（`.env` 里的 `FEMINA_PORT`）：QNAP QTS 的 Web 管理界面
+> 默认就占用 8080，群晖等也常有别的套件占着，所以避开了。容器内部仍固定监听 8080，
+> 改的只是宿主机映射这一侧。部署前先 `netstat -tln | grep 8090` 确认没被占。
+
+数据库按你的情况二选一（`docker-compose.db.yml` 是可选的覆盖文件）：
 
 ### 模式 A：自带 MySQL（新装默认）
 
-1. 修改媒体目录挂载（`docker-compose.yml` 中 `app.volumes`）指向你存放照片/视频的位置：
+compose 会额外起一个专属 `mysql:8.0` 容器，数据存在命名卷 `db_data` 中，
+升级镜像不会丢失档案数据。
 
-   ```yaml
-   volumes:
-     - /volume1/photos:/media:ro     # 改成你的实际路径；:ro 表示只读挂载
-   ```
-
-2. （可选）在同目录创建 `.env` 覆盖默认值（可参照 `.env.example`）：
+1. 在同目录创建 `.env`（参照 `.env.example`）：
 
    ```ini
    MYSQL_ROOT_PASSWORD=your_db_password
-   FEMINA_JWT_SECRET=change-me-to-a-long-random-string
-   MEDIA_DIR=/volume1/photos
-   FEMINA_PORT=8080
+   FEMINA_JWT_SECRET=<openssl rand -hex 32 的输出>
+   MEDIA_DIR=/volume1/photos      # 你的照片/视频目录，只读挂载进容器 /media
+   FEMINA_PORT=8090
    ```
 
-3. 启动（两个文件一起带上）：
+2. 启动（两个文件一起带上）：
 
    ```bash
-   docker compose -f docker-compose.yml -f docker-compose.db.yml up -d --build
+   docker compose -f docker-compose.yml -f docker-compose.db.yml up -d
    ```
-
-数据库数据保存在命名卷 `db_data` 中；升级镜像不会丢失档案数据。
 
 ### 模式 B：使用 NAS 上已有的 MySQL（多系统共库）
 
@@ -126,35 +128,107 @@ compose 拆为两个文件：`docker-compose.yml`（只有 app，数据库连接
 2. `.env` 配置连接信息：
 
    ```ini
-   # 三选一：局域网/宿主机 IP；或 host.docker.internal（指 NAS 宿主机，已内置支持）；
-   # 或同一 docker network 内其它容器名
+   # host 三选一：host.docker.internal（宿主机，已内置支持，也是默认值）；
+   # 172.17.0.1（docker0 网桥，同样指宿主机，前者不生效时兜底）；
+   # 或同一 docker network 内的其它容器名
    FEMINA_DB_HOST=host.docker.internal
    FEMINA_DB_PORT=3306
    FEMINA_DB_NAME=femina
    FEMINA_DB_USER=femina
    FEMINA_DB_PASSWORD=your_password
-   FEMINA_JWT_SECRET=change-me-to-a-long-random-string
+   FEMINA_JWT_SECRET=<openssl rand -hex 32 的输出>
    MEDIA_DIR=/volume1/photos
    ```
 
-   若 MySQL 跑在另一个 compose 项目的容器里：先 `docker network create nas-db`，
-   让两边容器加入同一网络（本项目的 `docker-compose.yml` 加 `networks` 段即可），
-   `FEMINA_DB_HOST` 填对方容器名。
+**变体：MySQL 跑在另一个容器里、且没映射宿主端口**
+
+这时上面三种 host 都用不了（宿主机上根本没监听），必须让两个容器加入同一个
+docker network 走内置 DNS。网络若还不存在先建一个，再让 MySQL 容器加入
+（`docker network create nas-db`、`docker network connect nas-db <mysql容器名>`；
+如果 MySQL 属于另一个 compose 项目，在那个项目的 compose 文件里声明这个
+external 网络更稳妥，`docker network connect` 在容器重建后会失效）：
+
+```bash
+# 查出 MySQL 容器名，即 FEMINA_DB_HOST 要填的值
+docker network inspect nas-db --format '{{range .Containers}}{{.Name}}{{"\n"}}{{end}}'
+# 确认网络名（compose 建的网络常带项目前缀，如 mystack_nas-db）
+docker network ls | grep nas-db
+```
+
+`.env` 里 `FEMINA_DB_HOST=<mysql容器名>`，然后给 `docker-compose.yml` 补两处
+`networks`（其余不动）：
+
+```yaml
+services:
+  app:
+    # ...原有内容保持不变...
+    networks:            # ← 新增：显式声明后就不再自动加入 default，所以两个都列上
+      - default
+      - nas-db
+
+networks:                # ← 新增：文件末尾
+  default:
+  nas-db:
+    external: true       # 网络已存在，compose 不创建也不删除它
+```
+
+`external: true` 不能省：没有它 compose 会自建一个叫 `<项目名>_nas-db` 的新网络，
+和 MySQL 所在的那个不是同一个，照样解析不到。
+
+连不上时用一个临时容器隔离排查（纯网络/账号问题，与应用无关）：
+
+```bash
+docker run --rm --network nas-db mysql:8.0 \
+  mysql -h <mysql容器名> -ufemina -pyour_password -e "SHOW DATABASES;"
+```
+
+| 报错 | 原因 |
+| --- | --- |
+| `Unknown MySQL server host` | 两容器不在同一网络；或 MySQL 在 `nas-db` 上的别名不是容器名（`docker inspect <mysql容器名> --format '{{json .NetworkSettings.Networks}}'` 看 aliases） |
+| `Can't connect` / 超时 | MySQL 配了 `bind-address=127.0.0.1`，去掉它 |
+| `Access denied` | 账号建成了 `'femina'@'localhost'`，须为 `@'%'`——连接来自另一个容器的 IP |
 
 3. 启动：
 
    ```bash
-   docker compose up -d --build
+   docker compose up -d
    ```
 
 要求：MySQL 5.7+ / 8.x，字符集 utf8mb4。Femina 只使用自己的 `femina` 库
 （表前缀无冲突：sys_user / person / person_account / tag / person_tag / media），
 不会触碰同实例里的其它数据库。
 
+> QNAP App Center 装的通常是 **MariaDB** 而非 MySQL，先 `SELECT VERSION();` 确认。
+> Femina 用 MySQL Connector/J，对 MariaDB 多数场景能正常工作，但不在官方支持范围内；
+> 真连不上就改用模式 A 起一个独立 MySQL 容器。
+
 ### 首次使用
 
-浏览器访问 `http://<NAS地址>:8080`，首次设置管理员后登录。
+浏览器访问 `http://<NAS地址>:8090`，首次设置管理员后登录。
 添加人物时，在「媒体目录」处点「浏览」，进入容器内的 `/media`（即你挂载的目录）选择子目录即可。
+
+命令行自检：
+
+```bash
+curl -s http://localhost:8090/api/auth/status
+# 期望 {"code":0,...,"data":{"initialized":false}}
+docker compose logs -f app          # 看到 Started FeminaApplication 即启动成功
+```
+
+### 升级与备份
+
+```bash
+docker compose pull && docker compose up -d && docker image prune -f
+```
+
+档案数据都在 MySQL 里，升级不会丢。想锁定某次构建便于回滚，在 `.env` 里设
+`FEMINA_IMAGE_TAG=sha-xxxxxxxx`（CI 每次构建都会打这个 tag）。
+
+备份只需要导出数据库——媒体文件本来就在 NAS 上，且是 `:ro` 只读挂载，系统改不动：
+
+```bash
+mysqldump -h <DB_HOST> -u femina -p --default-character-set=utf8mb4 femina > femina-backup.sql
+```
 
 ## 配置项（application.yml / 环境变量）
 
@@ -164,7 +238,7 @@ compose 拆为两个文件：`docker-compose.yml`（只有 app，数据库连接
 | `femina.media-root` | `FEMINA_MEDIA_ROOT` | 文件浏览器默认起点目录（可为空） |
 | `femina.jwt.secret` | `FEMINA_JWT_SECRET` | JWT 签名密钥，生产环境务必修改 |
 | `femina.jwt.expire-hours` | `FEMINA_JWT_EXPIRE_HOURS` | 登录有效期（小时），默认 72 |
-| `server.port` | `FEMINA_PORT` | 服务端口，默认 8080 |
+| `server.port` | `FEMINA_PORT` | 应用监听端口，默认 8080。Docker 部署时容器内固定 8080，`FEMINA_PORT` 只决定宿主机映射端口（compose 默认 8090） |
 
 ## 测试辅助脚本（可选）
 

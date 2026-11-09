@@ -28,9 +28,11 @@ npm run build                              # tsc 类型检查 + vite build（无
 # 一体化运行（类生产）：前端 build 后
 cp -r frontend/dist/* backend/src/main/resources/static/ && cd backend && mvn spring-boot:run
 
-# Docker（NAS 部署，两种模式见 README）
-docker compose -f docker-compose.yml -f docker-compose.db.yml up -d --build  # 自带 MySQL
-docker compose up -d --build                                                 # 外部已有 MySQL（.env 配 FEMINA_DB_*）
+# Docker（NAS 部署，两种模式见 README）：直接跑 GitHub Actions 构建的 ghcr.io/scrdx/femina
+# 镜像（公开、amd64+arm64），compose 里没有 build: 段，部署机上不需要源码。
+# 宿主机端口默认 8090（容器内仍 8080）——QNAP QTS 的管理界面占着 8080。
+docker compose -f docker-compose.yml -f docker-compose.db.yml up -d   # 自带 MySQL
+docker compose up -d                                                 # 外部已有 MySQL（.env 配 FEMINA_DB_*）
 
 # 测试辅助（无自动化单测；smoke test 需后端已启动在 :8080）
 python scripts/gen_testdata.py             # 在 testdata/ 生成演示媒体（testdata/ 已 gitignore）

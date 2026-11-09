@@ -1,25 +1,18 @@
-# Femina 基础编排：只有 app 服务，数据库连接全部由环境变量决定。
-#
-# 两种部署模式：
-#   A. 自带 MySQL（默认推荐的新装方式见 README）：
-#      docker compose -f docker-compose.yml -f docker-compose.db.yml up -d --build
-#   B. 使用 NAS 上已有的 MySQL 实例（多系统共库）：
-#      在 .env 中设置 FEMINA_DB_HOST/PORT/NAME/USER/PASSWORD 后：
-#      docker compose up -d --build
-#      注意：需提前在目标 MySQL 中建好数据库（见 README / .env.example），
-#      表结构由应用启动时自动创建，无需手动导入。
 services:
   app:
-    build: .
+    image: ghcr.io/scrdx/femina:${FEMINA_IMAGE_TAG:-latest}
     container_name: femina-app
     restart: unless-stopped
     ports:
-      - "${FEMINA_PORT:-8080}:8080"
+      - "${FEMINA_PORT:-8090}:8080"
     environment:
-      # 数据库连接：默认指向 docker-compose.db.yml 里的自带实例（服务名 db）；
-      # 使用外部 MySQL 时在 .env 覆盖为实际地址（IP、或同网络容器名、
-      # 或 host.docker.internal 指 NAS 宿主机）
-      FEMINA_DB_HOST: ${FEMINA_DB_HOST:-db}
+      # 数据库连接。模式 A 下由 docker-compose.db.yml 覆盖为自带实例（服务名 db）；
+      # 模式 B 在 .env 里填实际地址，FEMINA_DB_HOST 三选一：
+      #   host.docker.internal —— 宿主机上直接跑的 MySQL（默认值，extra_hosts 已内置支持）
+      #   172.17.0.1           —— docker0 网桥地址，同样指宿主机，host-gateway 不生效时兜底
+      #   <容器名>             —— MySQL 在别的容器里，需两边加入同一 docker network
+      #                        （本文件末尾要补 networks 段，写法见 README「模式 B」的容器变体）
+      FEMINA_DB_HOST: ${FEMINA_DB_HOST:-host.docker.internal}
       FEMINA_DB_PORT: "${FEMINA_DB_PORT:-3306}"
       FEMINA_DB_NAME: ${FEMINA_DB_NAME:-femina}
       FEMINA_DB_USER: ${FEMINA_DB_USER:-root}
@@ -32,7 +25,6 @@ services:
       # 让容器可以用 host.docker.internal 访问 NAS 宿主机上的 MySQL
       - "host.docker.internal:host-gateway"
     volumes:
-      # 将 NAS 上存放照片/视频的目录挂载到容器 /media。
-      # 修改下方路径为你的实际媒体目录；以【只读】方式挂载，
-      # 从操作系统层面保证系统绝不会修改或删除你的媒体文件。
+      # 存放照片/视频的目录挂载到容器 /media，实际路径在 .env 里用 MEDIA_DIR 指定。
+      # 以【只读】方式挂载，从操作系统层面保证系统绝不会修改或删除你的媒体文件。
       - ${MEDIA_DIR:-./data/media}:/media:ro

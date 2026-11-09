@@ -1,5 +1,5 @@
 # 覆盖文件：附带一个专属 MySQL 8 实例。
-# 用法：docker compose -f docker-compose.yml -f docker-compose.db.yml up -d --build
+# 用法：docker compose -f docker-compose.yml -f docker-compose.db.yml up -d
 # 已有 MySQL 想共库的用户不要带这个文件，直接在 .env 里配置外部连接即可。
 services:
   db:
