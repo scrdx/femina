@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/target
+backend/src/main/resources/static
+**/.git
+.claude
+testdata
+data
+*.log
+需求.txt
+README.md
+.env

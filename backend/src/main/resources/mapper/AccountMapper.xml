@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.femina.mapper.AccountMapper">
+
+    <insert id="batchInsert">
+        INSERT INTO person_account (person_id, type, value, sort_no) VALUES
+        <foreach collection="list" item="a" separator=",">
+            (#{personId}, #{a.type}, #{a.value}, #{a.sortNo})
+        </foreach>
+    </insert>
+
+    <select id="findByPerson" resultType="com.femina.model.PersonAccount">
+        SELECT id, person_id, type, value, sort_no
+        FROM person_account WHERE person_id = #{personId} ORDER BY sort_no, id
+    </select>
+
+    <delete id="deleteByPerson">
+        DELETE FROM person_account WHERE person_id = #{personId}
+    </delete>
+</mapper>

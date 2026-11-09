@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.femina.mapper.MediaMapper">
+
+    <insert id="batchInsert">
+        INSERT IGNORE INTO media (person_id, type, rel_path, file_name, ext, file_size) VALUES
+        <foreach collection="list" item="m" separator=",">
+            (#{m.personId}, #{m.type}, #{m.relPath}, #{m.fileName}, #{m.ext}, #{m.fileSize})
+        </foreach>
+    </insert>
+
+    <select id="findByPerson" resultType="com.femina.model.Media">
+        SELECT id, person_id, type, rel_path, file_name, ext, file_size, created_at
+        FROM media WHERE person_id = #{personId}
+        ORDER BY type DESC, file_name
+    </select>
+
+    <delete id="deleteByPerson">
+        DELETE FROM media WHERE person_id = #{personId}
+    </delete>
+
+    <delete id="deleteByPersonNotInPaths">
+        DELETE FROM media
+        WHERE person_id = #{personId}
+        <if test="paths != null and paths.size() > 0">
+            AND rel_path NOT IN
+            <foreach collection="paths" item="path" open="(" separator="," close=")">
+                #{path}
+            </foreach>
+        </if>
+    </delete>
+</mapper>

@@ -1,0 +1,30 @@
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Java / Maven
+backend/target/
+# 前端构建产物（一体化运行时拷入，不入库）
+backend/src/main/resources/static/
+
+# 环境与密钥
+.env
+
+# 运行日志（backend-dev.log / vite-dev.log 等）
+*.log
+
+# 演示数据与截图：scripts/gen_testdata.py 生成，16MB 二进制，不入库
+testdata/
+
+# NAS 部署时 docker-compose 默认挂载的媒体目录
+data/
+
+# 本地会话/工具配置（权限白名单、MCP 审批状态等，机器相关）
+.claude/settings.local.json
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db

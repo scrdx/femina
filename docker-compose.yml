@@ -1,0 +1,38 @@
+# Femina 基础编排：只有 app 服务，数据库连接全部由环境变量决定。
+#
+# 两种部署模式：
+#   A. 自带 MySQL（默认推荐的新装方式见 README）：
+#      docker compose -f docker-compose.yml -f docker-compose.db.yml up -d --build
+#   B. 使用 NAS 上已有的 MySQL 实例（多系统共库）：
+#      在 .env 中设置 FEMINA_DB_HOST/PORT/NAME/USER/PASSWORD 后：
+#      docker compose up -d --build
+#      注意：需提前在目标 MySQL 中建好数据库（见 README / .env.example），
+#      表结构由应用启动时自动创建，无需手动导入。
+services:
+  app:
+    build: .
+    container_name: femina-app
+    restart: unless-stopped
+    ports:
+      - "${FEMINA_PORT:-8080}:8080"
+    environment:
+      # 数据库连接：默认指向 docker-compose.db.yml 里的自带实例（服务名 db）；
+      # 使用外部 MySQL 时在 .env 覆盖为实际地址（IP、或同网络容器名、
+      # 或 host.docker.internal 指 NAS 宿主机）
+      FEMINA_DB_HOST: ${FEMINA_DB_HOST:-db}
+      FEMINA_DB_PORT: "${FEMINA_DB_PORT:-3306}"
+      FEMINA_DB_NAME: ${FEMINA_DB_NAME:-femina}
+      FEMINA_DB_USER: ${FEMINA_DB_USER:-root}
+      FEMINA_DB_PASSWORD: ${FEMINA_DB_PASSWORD:-femina_db_pass}
+      # 生产部署请务必在 .env 中修改 JWT 密钥
+      FEMINA_JWT_SECRET: ${FEMINA_JWT_SECRET:-please-change-this-jwt-secret}
+      # 容器内媒体根目录（添加人物时文件浏览器的默认起点）
+      FEMINA_MEDIA_ROOT: /media
+    extra_hosts:
+      # 让容器可以用 host.docker.internal 访问 NAS 宿主机上的 MySQL
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # 将 NAS 上存放照片/视频的目录挂载到容器 /media。
+      # 修改下方路径为你的实际媒体目录；以【只读】方式挂载，
+      # 从操作系统层面保证系统绝不会修改或删除你的媒体文件。
+      - ${MEDIA_DIR:-./data/media}:/media:ro

@@ -1,0 +1,42 @@
+server:
+  port: ${FEMINA_PORT:8080}
+
+spring:
+  application:
+    name: femina
+  datasource:
+    url: jdbc:mysql://${FEMINA_DB_HOST:localhost}:${FEMINA_DB_PORT:3306}/${FEMINA_DB_NAME:femina}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    username: ${FEMINA_DB_USER:root}
+    password: ${FEMINA_DB_PASSWORD:admin_123}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    default-property-inclusion: always
+  mvc:
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: true
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.femina.model
+  configuration:
+    map-underscore-to-camel-case: true
+
+femina:
+  # 人物媒体文件的根目录（添加人物时的默认浏览起点，人物媒体目录可以在此之外任意指定）
+  media-root: ${FEMINA_MEDIA_ROOT:}
+  jwt:
+    # 生产部署时务必通过环境变量覆盖
+    secret: ${FEMINA_JWT_SECRET:femina-default-jwt-secret-change-me}
+    # token 有效期（小时）
+    expire-hours: ${FEMINA_JWT_EXPIRE_HOURS:72}
+
+logging:
+  level:
+    com.femina: info

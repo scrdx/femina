@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.femina.mapper.PersonMapper">
+
+    <insert id="insert" parameterType="com.femina.model.Person">
+        INSERT INTO person (id, name, nickname, birth_date, birth_year, birth_year_only,
+                            hometown, education, height_cm, weight_kg, media_dir, cover_path, cover_data, remarks)
+        VALUES (#{id}, #{name}, #{nickname}, #{birthDate}, #{birthYear}, #{birthYearOnly},
+                #{hometown}, #{education}, #{heightCm}, #{weightKg}, #{mediaDir}, #{coverPath}, #{coverData}, #{remarks})
+    </insert>
+
+    <update id="update" parameterType="com.femina.model.Person">
+        UPDATE person
+        SET name = #{name},
+            nickname = #{nickname},
+            birth_date = #{birthDate},
+            birth_year = #{birthYear},
+            birth_year_only = #{birthYearOnly},
+            hometown = #{hometown},
+            education = #{education},
+            height_cm = #{heightCm},
+            weight_kg = #{weightKg},
+            media_dir = #{mediaDir},
+            cover_path = #{coverPath},
+            cover_data = #{coverData},
+            remarks = #{remarks}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findById" resultType="com.femina.model.Person">
+        SELECT id, name, nickname, birth_date, birth_year, birth_year_only,
+               hometown, education, height_cm, weight_kg, media_dir, cover_path, cover_data, remarks,
+               created_at, updated_at
+        FROM person WHERE id = #{id}
+    </select>
+
+    <delete id="deleteById">
+        DELETE FROM person WHERE id = #{id}
+    </delete>
+
+    <sql id="searchWhere">
+        <where>
+            <if test="keyword != null and keyword != ''">
+                (
+                    p.name LIKE CONCAT('%', #{keyword}, '%')
+                    OR p.nickname LIKE CONCAT('%', #{keyword}, '%')
+                    OR EXISTS (
+                        SELECT 1 FROM person_account a
+                        WHERE a.person_id = p.id
+                          AND (a.value LIKE CONCAT('%', #{keyword}, '%')
+                               OR a.type LIKE CONCAT('%', #{keyword}, '%'))
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM person_tag pt JOIN tag t ON t.id = pt.tag_id
+                        WHERE pt.person_id = p.id
+                          AND t.name LIKE CONCAT('%', #{keyword}, '%')
+                    )
+                )
+            </if>
+        </where>
+    </sql>
+
+    <!-- sortBy/sortDir 由 <choose> 白名单映射为固定列名，不存在 SQL 注入 -->
+    <select id="search" resultType="com.femina.model.dto.PersonDtos$PersonSummary">
+        SELECT p.id, p.name, p.nickname, p.cover_path, p.cover_data,
+               p.birth_year_only, p.birth_date, p.birth_year,
+               p.hometown, p.education, p.height_cm, p.weight_kg,
+               (SELECT COUNT(*) FROM media m WHERE m.person_id = p.id) AS media_count
+        FROM person p
+        <include refid="searchWhere"/>
+        ORDER BY
+        <choose>
+            <when test="sortBy == 'nickname'">COALESCE(p.nickname, '')</when>
+            <when test="sortBy == 'updated'">p.updated_at</when>
+            <when test="sortBy == 'media'">media_count</when>
+            <otherwise>p.created_at</otherwise>
+        </choose>
+        <choose>
+            <when test="sortDir == 'asc'">ASC</when>
+            <otherwise>DESC</otherwise>
+        </choose>
+        , p.created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countSearch" resultType="long">
+        SELECT COUNT(*) FROM person p
+        <include refid="searchWhere"/>
+    </select>
+</mapper>

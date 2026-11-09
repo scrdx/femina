@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.femina.mapper.TagMapper">
+
+    <select id="findAll" resultType="com.femina.model.Tag">
+        SELECT t.id, t.name, COUNT(pt.person_id) AS count
+        FROM tag t LEFT JOIN person_tag pt ON pt.tag_id = t.id
+        GROUP BY t.id, t.name
+        ORDER BY t.name
+    </select>
+
+    <insert id="insertIgnore">
+        INSERT IGNORE INTO tag (name) VALUES (#{name})
+    </insert>
+
+    <select id="findByName" resultType="com.femina.model.Tag">
+        SELECT id, name FROM tag WHERE name = #{name}
+    </select>
+
+    <select id="findByPerson" resultType="com.femina.model.Tag">
+        SELECT t.id, t.name FROM tag t
+        JOIN person_tag pt ON pt.tag_id = t.id
+        WHERE pt.person_id = #{personId}
+        ORDER BY t.name
+    </select>
+
+    <select id="findByPersonIds" resultType="com.femina.mapper.TagMapper$PersonTagView">
+        SELECT pt.person_id AS personId, t.name AS tagName
+        FROM person_tag pt JOIN tag t ON t.id = pt.tag_id
+        WHERE pt.person_id IN
+        <foreach collection="personIds" item="pid" open="(" separator="," close=")">
+            #{pid}
+        </foreach>
+        ORDER BY t.name
+    </select>
+
+    <insert id="attach">
+        INSERT IGNORE INTO person_tag (person_id, tag_id) VALUES (#{personId}, #{tagId})
+    </insert>
+
+    <delete id="detachByPerson">
+        DELETE FROM person_tag WHERE person_id = #{personId}
+    </delete>
+</mapper>
