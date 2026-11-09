@@ -34,7 +34,8 @@ export default function CropDialog({
   onConfirm,
   onClose,
 }: Props) {
-  const viewRef = useRef<HTMLDivElement>(null)
+  // callback ref 里要手动赋值，用可空泛型拿 MutableRefObject 而非只读的 RefObject
+  const viewRef = useRef<HTMLDivElement | null>(null)
   const imgRef = useRef<HTMLImageElement>(null)
   const drag = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null)
   const [view, setView] = useState({ w: 0, h: 0 })

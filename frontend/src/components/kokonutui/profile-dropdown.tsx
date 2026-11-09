@@ -307,7 +307,8 @@ function Identity({
   shared: boolean;
   account: Account;
   tone: number;
-  status: AccountStatus;
+  // 可缺省：不传即不展示状态（见 ProfileDropdown 的 defaultStatus）
+  status?: AccountStatus;
   transition: Transition;
   stacked: boolean;
 }) {
@@ -651,10 +652,14 @@ export default function ProfileDropdown({
     defaultTheme,
     onThemeChange
   );
-  const [status, setStatus] = useControllable(
+  // status 允许为空（不展示），故显式把 T 定为可空；
+  // onStatusChange 只接受已定义的状态，包一层过滤 undefined。
+  const [status, setStatus] = useControllable<AccountStatus | undefined>(
     statusProp,
     defaultStatus,
-    onStatusChange
+    (next) => {
+      if (next) onStatusChange?.(next);
+    }
   );
 
   const wrapperRef = useRef<HTMLDivElement>(null);

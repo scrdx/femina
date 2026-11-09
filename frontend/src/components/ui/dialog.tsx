@@ -87,13 +87,14 @@ function DialogContent({
  * 统一标题栏：Windows 窗口标题栏观感——标题与关闭按钮同一行，
  * 关闭按钮占满右上角（贴弹窗边框、外侧跟随圆角）。
  * 约定：DialogContent 使用 p-0/gap-0，标题栏即内容区第一个子元素。
+ * title 类型必须 Omit 掉 div 自带的 string 型 title 属性，否则交叉后只接受字符串。
  */
 function DialogTitleBar({
   className,
   titleClassName,
   title,
   ...props
-}: React.ComponentProps<"div"> & {
+}: Omit<React.ComponentProps<"div">, "title"> & {
   title: React.ReactNode
   titleClassName?: string
 }) {
