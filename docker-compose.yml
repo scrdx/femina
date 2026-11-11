@@ -6,17 +6,18 @@ services:
     ports:
       - "${FEMINA_PORT:-8090}:8080"
     environment:
-      # 数据库连接。模式 A 下由 docker-compose.db.yml 覆盖为自带实例（服务名 db）；
-      # 模式 B 在 .env 里填实际地址，FEMINA_DB_HOST 三选一：
-      #   host.docker.internal —— 宿主机上直接跑的 MySQL（默认值，extra_hosts 已内置支持）
+      # 数据库连接：Femina 不自带 MySQL 实例，以下五项必须在 .env 中提供，
+      # 缺失时 compose 直接报错而不是用默认值连一个不存在的库。
+      # FEMINA_DB_HOST 三选一：
+      #   host.docker.internal —— 宿主机上直接跑的 MySQL（extra_hosts 已内置支持）
       #   172.17.0.1           —— docker0 网桥地址，同样指宿主机，host-gateway 不生效时兜底
       #   <容器名>             —— MySQL 在别的容器里，需两边加入同一 docker network
-      #                        （本文件末尾要补 networks 段，写法见 README「模式 B」的容器变体）
-      FEMINA_DB_HOST: ${FEMINA_DB_HOST:-host.docker.internal}
-      FEMINA_DB_PORT: "${FEMINA_DB_PORT:-3306}"
-      FEMINA_DB_NAME: ${FEMINA_DB_NAME:-femina}
-      FEMINA_DB_USER: ${FEMINA_DB_USER:-root}
-      FEMINA_DB_PASSWORD: ${FEMINA_DB_PASSWORD:-femina_db_pass}
+      #                        （本文件末尾要补 networks 段，写法见 README 的容器变体）
+      FEMINA_DB_HOST: ${FEMINA_DB_HOST:?必须在 .env 中提供 FEMINA_DB_HOST（MySQL 地址）}
+      FEMINA_DB_PORT: ${FEMINA_DB_PORT:?必须在 .env 中提供 FEMINA_DB_PORT（如 3306）}
+      FEMINA_DB_NAME: ${FEMINA_DB_NAME:?必须在 .env 中提供 FEMINA_DB_NAME（数据库名）}
+      FEMINA_DB_USER: ${FEMINA_DB_USER:?必须在 .env 中提供 FEMINA_DB_USER（数据库账号）}
+      FEMINA_DB_PASSWORD: ${FEMINA_DB_PASSWORD:?必须在 .env 中提供 FEMINA_DB_PASSWORD（数据库密码）}
       # 生产部署请务必在 .env 中修改 JWT 密钥
       FEMINA_JWT_SECRET: ${FEMINA_JWT_SECRET:-please-change-this-jwt-secret}
       # 容器内媒体根目录（添加人物时文件浏览器的默认起点）
