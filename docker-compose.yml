@@ -7,7 +7,6 @@ services:
       - "${FEMINA_PORT:-8090}:8080"
     environment:
       # 数据库连接：Femina 不自带 MySQL 实例，以下五项必须在 .env 中提供，
-      # 缺失时 compose 直接报错而不是用默认值连一个不存在的库。
       # FEMINA_DB_HOST 三选一：
       #   host.docker.internal —— 宿主机上直接跑的 MySQL（extra_hosts 已内置支持）
       #   172.17.0.1           —— docker0 网桥地址，同样指宿主机，host-gateway 不生效时兜底
