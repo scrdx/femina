@@ -4,7 +4,8 @@ import type { AccountEntry } from '../api/types'
 import { ShellInput } from './FormField'
 
 export const ACCOUNT_TYPES = [
-  '手机号', '微信', 'QQ', 'Telegram', '抖音', '快手', '小红书', '微博',
+  '手机号', '微信', 'QQ', 'Telegram', 'Telegram频道', 'Telegram群组',
+  '抖音', '快手', '小红书', '微博',
   'Instagram', 'Twitter/X', 'Facebook', '邮箱', '其他',
 ]
 
