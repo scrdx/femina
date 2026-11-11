@@ -31,6 +31,9 @@ mybatis:
 femina:
   # 人物媒体文件的根目录（添加人物时的默认浏览起点，人物媒体目录可以在此之外任意指定）
   media-root: ${FEMINA_MEDIA_ROOT:}
+  # 缩略图目录（可选）。配置后扫描/启动时后台生成 1600px JPEG 副本供列表与查看器
+  # 适配态展示；留空则全部回退原图。该目录只写缩略图，绝不写入用户媒体目录。
+  thumb-dir: ${FEMINA_THUMB_DIR:}
   jwt:
     # 生产部署时务必通过环境变量覆盖
     secret: ${FEMINA_JWT_SECRET:femina-default-jwt-secret-change-me}

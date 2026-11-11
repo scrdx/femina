@@ -15,11 +15,12 @@ interface Props {
 export default function VideoDialog({ personId, item, onClose }: Props) {
   return (
     <Dialog open={!!item} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-4xl gap-0 border-none bg-black/95 p-0 sm:rounded-lg" showCloseButton={false}>
+      <DialogContent className="max-w-4xl gap-0 border-none bg-black/95 p-0 sm:max-w-4xl" showCloseButton={false}>
         <DialogTitleBar
           title={item?.fileName ?? '视频播放'}
           className="border-white/15"
           titleClassName="text-zinc-100"
+          closeClassName="text-zinc-400 hover:bg-white/10 hover:text-zinc-100 active:bg-white/15"
         />
         {item && (
           <video

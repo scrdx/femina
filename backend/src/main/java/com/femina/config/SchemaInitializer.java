@@ -30,6 +30,11 @@ public class SchemaInitializer {
             "ALTER TABLE sys_user ADD COLUMN display_name VARCHAR(64) NULL",
             "ALTER TABLE sys_user ADD COLUMN avatar MEDIUMTEXT NULL",
             "ALTER TABLE person ADD COLUMN cover_data MEDIUMTEXT NULL",
+            // 媒体属性排序所需；逐条独立，中断不会留下半应用状态
+            "ALTER TABLE media ADD COLUMN width INT NULL",
+            "ALTER TABLE media ADD COLUMN height INT NULL",
+            "ALTER TABLE media ADD COLUMN modified_at DATETIME NULL",
+            "ALTER TABLE media ADD COLUMN file_created_at DATETIME NULL",
     };
 
     private final DataSource dataSource;

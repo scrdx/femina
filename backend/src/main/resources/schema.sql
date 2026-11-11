@@ -62,7 +62,20 @@ CREATE TABLE IF NOT EXISTS media (
     file_name  VARCHAR(255)  NOT NULL,
     ext        VARCHAR(16)            DEFAULT NULL,
     file_size  BIGINT                 DEFAULT 0,
-    created_at DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    width      INT                            DEFAULT NULL COMMENT '图片宽 px（扫描/回填写入）',
+    height     INT                            DEFAULT NULL COMMENT '图片高 px',
+    modified_at DATETIME                      DEFAULT NULL COMMENT '文件修改时间',
+    file_created_at DATETIME                  DEFAULT NULL COMMENT '文件创建时间（文件系统）',
+    created_at DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录登记时间',
     UNIQUE KEY uk_media_person_path (person_id, rel_path(255)),
     KEY idx_media_person (person_id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+-- 见面记录：日期可空（见面时间非必填）
+CREATE TABLE IF NOT EXISTS meet_record (
+    id         BIGINT   NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    person_id  CHAR(36) NOT NULL,
+    meet_date  DATE              DEFAULT NULL COMMENT '见面日期，可空',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录登记时间',
+    KEY idx_meet_person (person_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;

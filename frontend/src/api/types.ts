@@ -22,6 +22,16 @@ export interface PersonSummary {
   tags: string[]
 }
 
+export type MediaSortKey = 'name' | 'size' | 'dims' | 'created' | 'modified'
+
+/** 见面记录；meetDate 可为 null（非必填） */
+export interface MeetRecord {
+  id: number
+  personId: string
+  meetDate: string | null
+  createdAt: string | null
+}
+
 export interface MediaItem {
   id: number
   personId: string
@@ -30,6 +40,14 @@ export interface MediaItem {
   fileName: string
   ext: string
   fileSize: number
+  /** 图片宽高 px；0/null 表示未知（存量回填完成前） */
+  width: number | null
+  height: number | null
+  modifiedAt: string | null
+  /** 文件创建时间（文件系统） */
+  fileCreatedAt: string | null
+  /** 记录登记时间 */
+  createdAt: string | null
 }
 
 export interface PersonDetail {
@@ -50,8 +68,16 @@ export interface PersonDetail {
   createdAt: string | null
   accounts: AccountEntry[]
   tags: string[]
-  photos: MediaItem[]
-  videos: MediaItem[]
+  /** 媒体明细走分页接口，详情只带计数 */
+  photoCount: number
+  videoCount: number
+}
+
+export interface MediaPage {
+  items: MediaItem[]
+  total: number
+  page: number
+  size: number
 }
 
 export interface PersonForm {

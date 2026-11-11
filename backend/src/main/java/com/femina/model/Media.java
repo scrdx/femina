@@ -16,5 +16,15 @@ public class Media {
     private String fileName;
     private String ext;
     private Long fileSize;
+    /** 图片宽高（px）；扫描/回填时写入，0 或 null 表示未知 */
+    private Integer width;
+    private Integer height;
+    /** 文件修改时间 */
+    private LocalDateTime modifiedAt;
+    /** 文件创建时间（文件系统）；不支持时回退修改时间 */
+    private LocalDateTime fileCreatedAt;
+    /** 记录登记时间 */
     private LocalDateTime createdAt;
+    /** 仅回填查询用：JOIN person 带出的媒体目录，不参与常规映射语义 */
+    private String mediaDir;
 }

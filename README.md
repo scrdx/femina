@@ -236,6 +236,7 @@ mysqldump -h <DB_HOST> -u femina -p --default-character-set=utf8mb4 femina > fem
 |---|---|---|
 | `spring.datasource.url/username/password` | `FEMINA_DB_HOST/PORT/NAME/USER/PASSWORD` | 数据库连接 |
 | `femina.media-root` | `FEMINA_MEDIA_ROOT` | 文件浏览器默认起点目录（可为空） |
+| `femina.thumb-dir` | `FEMINA_THUMB_DIR` | 缩略图目录（可为空）。配置后扫描/启动时后台为照片生成最长边 1600px 的 JPEG 副本，图片墙/海报墙/查看器适配态展示缩略图、放大超过其分辨率自动切回原图；留空则全部直接伺服原图。只写该目录，绝不写入媒体目录 |
 | `femina.jwt.secret` | `FEMINA_JWT_SECRET` | JWT 签名密钥，生产环境务必修改 |
 | `femina.jwt.expire-hours` | `FEMINA_JWT_EXPIRE_HOURS` | 登录有效期（小时），默认 72 |
 | `server.port` | `FEMINA_PORT` | 应用监听端口，默认 8080。Docker 部署时容器内固定 8080，`FEMINA_PORT` 只决定宿主机映射端口（compose 默认 8090） |

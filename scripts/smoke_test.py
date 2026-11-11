@@ -66,7 +66,8 @@ pid2 = c2["data"]["id"]
 # detail
 st, detail = call("GET", "/persons/" + pid, token)
 show("== detail ==", detail)
-print("   photos:", len(detail["data"]["photos"]), "videos:", len(detail["data"]["videos"]))
+print("   photoCount:", detail["data"]["photoCount"], "videoCount:", detail["data"]["videoCount"])
+show("== media page ==", call("GET", "/persons/" + pid + "/media?type=PHOTO&page=1&size=10", token)[1])
 
 # list & search
 show("== list ==", call("GET", "/persons?page=1&size=10", token)[1])

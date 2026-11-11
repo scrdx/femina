@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronRight,
   Clapperboard,
@@ -14,6 +14,9 @@ import {
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import ImageViewToolbar from '@/components/ImageViewToolbar'
+import RasterImage from '@/components/RasterImage'
+import { useImageView } from '@/hooks/useImageView'
 import { mediaUrl, personApi } from '../api'
 import type { MediaItem, PersonFileNode } from '../api/types'
 import VideoDialog from './VideoDialog'
@@ -107,6 +110,11 @@ export default function PersonFileBrowser({ personId, mediaDir }: Props) {
         id: 0,
         personId,
         type: 'VIDEO',
+        width: null,
+        height: null,
+        modifiedAt: null,
+        fileCreatedAt: null,
+        createdAt: null,
         relPath: video.relPath,
         fileName: video.name,
         ext: extOf(video.name),
@@ -214,22 +222,163 @@ export default function PersonFileBrowser({ personId, mediaDir }: Props) {
 
       {/* 图片预览弹窗 */}
       <Dialog open={!!photo} onOpenChange={(o) => !o && setPhoto(null)}>
-        <DialogContent className="max-w-4xl border-none bg-black/90 p-0 sm:rounded-lg">
+        <DialogContent className="max-w-4xl overflow-hidden border-none bg-black/90 p-0 sm:max-w-4xl sm:rounded-lg">
           <DialogHeader className="sr-only">
             <DialogTitle>{photo?.name ?? '图片预览'}</DialogTitle>
           </DialogHeader>
-          {photo && (
-            <img
-              src={mediaUrl(personId, photo.relPath)}
-              alt={photo.name}
-              className="max-h-[80vh] w-full rounded-lg object-contain"
-            />
-          )}
+          {photo && <PhotoPreview key={photo.relPath} node={photo} personId={personId} />}
         </DialogContent>
       </Dialog>
 
       {/* 视频播放弹窗（复用） */}
       <VideoDialog personId={personId} item={videoItem} onClose={() => setVideo(null)} />
+    </div>
+  )
+}
+
+/**
+ * 图片预览舞台：元素盒按自然比例 fitted 到舞台（不用 object-contain 的
+ * letterbox），缩放/旋转/平移的外界数学与 lightbox 一致。rot 在此持有，
+ * 与元素盒重算同 tick 批处理；放大后拖拽平移。
+ */
+function PhotoPreview({ personId, node }: { personId: string; node: PersonFileNode }) {
+  const stageRef = useRef<HTMLDivElement | null>(null)
+  const [stage, setStage] = useState<{ w: number; h: number } | null>(null)
+  const [nat, setNat] = useState<{ w: number; h: number } | null>(null)
+  const [rot, setRot] = useState(0)
+  const drag = useRef<{ id: number; sx: number; sy: number; px: number; py: number } | null>(
+    null
+  )
+
+  // 舞台可用区（弹窗宽度随视口变化）
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const measure = () => setStage({ w: el.clientWidth, h: el.clientHeight })
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // 预探自然尺寸
+  useEffect(() => {
+    let alive = true
+    const img = new Image()
+    img.onload = () => {
+      if (alive) setNat({ w: img.naturalWidth, h: img.naturalHeight })
+    }
+    img.src = mediaUrl(personId, node.relPath)
+    return () => {
+      alive = false
+    }
+  }, [personId, node.relPath])
+
+  // 元素盒：自然比例 fitted 到舞台；奇数倍 90° 时先 fitted 到交换后的舞台，
+  // rotate 后的视觉外界恰好落在真实舞台内
+  const box = useMemo(() => {
+    if (!stage || !nat) return null
+    const sw = rot % 180 !== 0
+    const swStage = sw ? { w: stage.h, h: stage.w } : stage
+    const s = Math.min(swStage.w / nat.w, swStage.h / nat.h)
+    return { width: nat.w * s, height: nat.h * s }
+  }, [stage, nat, rot])
+
+  // 缩放内容铺满的窗口 = 旋转后的视觉外界
+  const frame = useMemo(
+    () => (box ? (rot % 180 !== 0 ? { width: box.height, height: box.width } : box) : null),
+    [box, rot]
+  )
+  // 原图 1:1 对应的 zoom：水平轴方向的自然像素 / 屏幕像素
+  const oneToOne =
+    box && nat ? (rot % 180 !== 0 ? nat.h / box.height : nat.w / box.width) : null
+  const view = useImageView({ frame, oneToOne })
+
+  // 显示尺寸 = 适配盒 × zoom；光栅化与 1:1 展示由 RasterImage 负责
+  const originalSrc = mediaUrl(personId, node.relPath)
+  const displayW = box ? box.width * view.zoom : 0
+  const displayH = box ? box.height * view.zoom : 0
+
+  const rotateBy = (dir: 1 | -1) => {
+    if (!nat || !stage || !box) return
+    const next = ((rot + dir * 90) % 360 + 360) % 360
+    // 旋转后的元素盒（与 memo 同公式），据此算新 oneToOne
+    const sw = next % 180 !== 0
+    const st = sw ? { w: stage.h, h: stage.w } : stage
+    const s = Math.min(st.w / nat.w, st.h / nat.h)
+    const boxNew = { width: nat.w * s, height: nat.h * s }
+    const oNew = sw ? nat.h / boxNew.height : nat.w / boxNew.width
+    setRot(next)
+    // 同比调整 zoom，保持屏幕上的实际放大比例不变
+    if (oneToOne && oNew) view.rescaleZoom(oNew / oneToOne)
+  }
+
+  // 测量 ref 与 wheel ref 合并成一个稳定 callback ref（缩放时 60fps 重渲染不能抖）
+  const stageCbRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      stageRef.current = node
+      view.attachWheel(node)
+    },
+    [view.attachWheel]
+  )
+
+  return (
+    <div className="flex flex-col" onPointerDown={(e) => e.stopPropagation()}>
+      <div
+        className={`relative flex h-[66vh] w-full touch-none select-none items-center justify-center ${
+          view.zoomed ? 'cursor-move' : 'cursor-default'
+        }`}
+        onPointerCancel={(e) => {
+          e.stopPropagation()
+          drag.current = null
+        }}
+        onPointerDown={(e) => {
+          // 拦住 React 树冒泡，避免底层 smooth-tab 抢指针捕获
+          e.stopPropagation()
+          if (!view.zoomed || e.button !== 0) return
+          e.currentTarget.setPointerCapture(e.pointerId)
+          drag.current = {
+            id: e.pointerId,
+            sx: e.clientX,
+            sy: e.clientY,
+            px: view.panX,
+            py: view.panY,
+          }
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current
+          if (!d || d.id !== e.pointerId) return
+          e.stopPropagation()
+          view.setPan(d.px + (e.clientX - d.sx), d.py + (e.clientY - d.sy))
+        }}
+        onPointerUp={(e) => {
+          e.stopPropagation()
+          drag.current = null
+        }}
+        ref={stageCbRef}
+      >
+        {box && nat && (
+          <RasterImage
+            alt={node.name}
+            className="pointer-events-none max-w-none"
+            displayH={displayH}
+            displayW={displayW}
+            natH={nat.h}
+            natW={nat.w}
+            panX={view.panX}
+            panY={view.panY}
+            rot={rot}
+            src={originalSrc}
+          />
+        )}
+      </div>
+      <div className="flex justify-center py-4">
+        <ImageViewToolbar
+          onRotateCcw={() => rotateBy(-1)}
+          onRotateCw={() => rotateBy(1)}
+          view={view}
+        />
+      </div>
     </div>
   )
 }

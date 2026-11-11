@@ -17,8 +17,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.femina.common.R;
+import com.femina.model.Media;
+import com.femina.model.MeetRecord;
 import com.femina.model.Tag;
 import com.femina.model.dto.PersonDtos.FileNode;
+import com.femina.model.dto.PersonDtos.MeetForm;
 import com.femina.model.dto.PersonDtos.PageResult;
 import com.femina.model.dto.PersonDtos.PersonDetail;
 import com.femina.model.dto.PersonDtos.PersonForm;
@@ -83,6 +86,37 @@ public class PersonController {
     }
 
     /** 浏览人物媒体目录（只读）：多级目录、含非媒体文件 */
+    // ---- 见面记录 ----
+
+    @GetMapping("/persons/{id}/meets")
+    public R<List<MeetRecord>> meets(@PathVariable String id) {
+        return R.ok(personService.listMeets(id));
+    }
+
+    @PostMapping("/persons/{id}/meets")
+    public R<MeetRecord> addMeet(@PathVariable String id, @RequestBody MeetForm form) {
+        return R.ok(personService.addMeet(id, form));
+    }
+
+    @DeleteMapping("/persons/{id}/meets/{meetId}")
+    public R<Void> deleteMeet(@PathVariable String id, @PathVariable Long meetId) {
+        personService.deleteMeet(id, meetId);
+        return R.ok(null);
+    }
+
+    /** 媒体明细分页；type=PHOTO|VIDEO；sort=name|size|dims|created|modified */
+    @GetMapping("/persons/{id}/media")
+    public R<PageResult<Media>> media(
+            @PathVariable String id,
+            @RequestParam(required = false) String type,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "48") int size,
+            @RequestParam(defaultValue = "name") String sort,
+            @RequestParam(defaultValue = "asc") String dir) {
+        return R.ok(personService.mediaPage(
+                id, type, Math.max(1, page), Math.min(200, Math.max(1, size)), sort, dir));
+    }
+
     @GetMapping("/persons/{id}/files")
     public R<List<FileNode>> files(@PathVariable String id,
                                    @RequestParam(required = false) String path) {

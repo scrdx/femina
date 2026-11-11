@@ -29,15 +29,18 @@ import org.springframework.transaction.annotation.Transactional;
 import com.femina.common.ApiException;
 import com.femina.util.FilePathUtil;
 import com.femina.mapper.AccountMapper;
+import com.femina.mapper.MeetMapper;
 import com.femina.mapper.MediaMapper;
 import com.femina.mapper.PersonMapper;
 import com.femina.mapper.TagMapper;
 import com.femina.model.Media;
+import com.femina.model.MeetRecord;
 import com.femina.model.Person;
 import com.femina.model.PersonAccount;
 import com.femina.model.Tag;
 import com.femina.model.dto.PersonDtos.AccountEntry;
 import com.femina.model.dto.PersonDtos.FileNode;
+import com.femina.model.dto.PersonDtos.MeetForm;
 import com.femina.model.dto.PersonDtos.PageResult;
 import com.femina.model.dto.PersonDtos.PersonDetail;
 import com.femina.model.dto.PersonDtos.PersonForm;
@@ -50,15 +53,20 @@ public class PersonService {
     private final AccountMapper accountMapper;
     private final TagMapper tagMapper;
     private final MediaMapper mediaMapper;
+    private final MeetMapper meetMapper;
     private final MediaScanService mediaScanService;
+    private final ThumbService thumbService;
 
     public PersonService(PersonMapper personMapper, AccountMapper accountMapper, TagMapper tagMapper,
-                         MediaMapper mediaMapper, MediaScanService mediaScanService) {
+                         MediaMapper mediaMapper, MeetMapper meetMapper, MediaScanService mediaScanService,
+                         ThumbService thumbService) {
         this.personMapper = personMapper;
         this.accountMapper = accountMapper;
         this.tagMapper = tagMapper;
         this.mediaMapper = mediaMapper;
+        this.meetMapper = meetMapper;
         this.mediaScanService = mediaScanService;
+        this.thumbService = thumbService;
     }
 
     @Transactional
@@ -71,6 +79,7 @@ public class PersonService {
         saveTags(person.getId(), form.getTags());
         if (StringUtils.isNotBlank(form.getMediaDir())) {
             mediaScanService.scanAndSave(person.getId(), form.getMediaDir());
+            thumbService.schedulePerson(person.getId());
         }
         return person.getId();
     }
@@ -88,6 +97,7 @@ public class PersonService {
         // 媒体目录变化时重新扫描（仅操作数据库记录，不动文件）
         if (!StringUtils.equals(StringUtils.trimToEmpty(oldDir), StringUtils.trimToEmpty(form.getMediaDir()))) {
             mediaScanService.rescan(id, form.getMediaDir());
+            thumbService.schedulePerson(id);
         }
     }
 
@@ -101,7 +111,42 @@ public class PersonService {
         mediaMapper.deleteByPerson(id);
         accountMapper.deleteByPerson(id);
         tagMapper.detachByPerson(id);
+        meetMapper.deleteByPerson(id);
         personMapper.deleteById(id);
+    }
+
+    // ---- 见面记录 ----
+
+    public List<MeetRecord> listMeets(String personId) {
+        requirePerson(personId);
+        return meetMapper.findByPerson(personId);
+    }
+
+    /** 新增见面记录；日期必填（「非必填」指人物可以没有记录，单条记录必须有日期） */
+    public MeetRecord addMeet(String personId, MeetForm form) {
+        requirePerson(personId);
+        String raw = form == null ? null : form.getMeetDate();
+        if (StringUtils.isBlank(raw)) {
+            throw ApiException.badRequest("见面日期必填");
+        }
+        LocalDate date;
+        try {
+            date = LocalDate.parse(raw.trim());
+        } catch (DateTimeParseException e) {
+            throw ApiException.badRequest("日期格式应为 YYYY-MM-DD");
+        }
+        MeetRecord r = new MeetRecord();
+        r.setPersonId(personId);
+        r.setMeetDate(date);
+        meetMapper.insert(r);
+        return r;
+    }
+
+    public void deleteMeet(String personId, Long meetId) {
+        requirePerson(personId);
+        if (meetMapper.deleteByIdAndPerson(meetId, personId) == 0) {
+            throw ApiException.badRequest("见面记录不存在");
+        }
     }
 
     public PersonDetail detail(String id) {
@@ -132,15 +177,31 @@ public class PersonService {
 
         d.setTags(tagMapper.findByPerson(id).stream().map(Tag::getName).collect(Collectors.toList()));
 
-        List<Media> all = mediaMapper.findByPerson(id);
-        d.setPhotos(all.stream().filter(m -> "PHOTO".equals(m.getType())).collect(Collectors.toList()));
-        d.setVideos(all.stream().filter(m -> "VIDEO".equals(m.getType())).collect(Collectors.toList()));
+        d.setPhotoCount(mediaMapper.countByPerson(id, "PHOTO"));
+        d.setVideoCount(mediaMapper.countByPerson(id, "VIDEO"));
         return d;
+    }
+
+    /** 媒体排序白名单（与 MediaMapper.xml 的 <choose> 一致） */
+    private static final Set<String> MEDIA_SORT_FIELDS = new HashSet<>(
+            Arrays.asList("name", "size", "dims", "created", "modified"));
+
+    /** 分页拉取媒体明细（type 为 null 不限类型）；page 从 1 起；sort/dir 兜底校验 */
+    public PageResult<Media> mediaPage(String id, String type, int page, int size,
+            String sort, String dir) {
+        String s = MEDIA_SORT_FIELDS.contains(sort) ? sort : "name";
+        String d = "desc".equalsIgnoreCase(dir) ? "desc" : "asc";
+        long total = mediaMapper.countByPerson(id, type);
+        List<Media> items = total == 0
+                ? new ArrayList<>()
+                : mediaMapper.findByPersonPaged(id, type, (page - 1) * size, size, s, d);
+        return new PageResult<>(items, total, page, size);
     }
 
     /** 允许的排序字段（与 PersonMapper.xml 中 <choose> 白名单一致） */
     private static final Set<String> SORT_FIELDS =
-            new HashSet<>(Arrays.asList("nickname", "created", "updated", "media"));
+            new HashSet<>(Arrays.asList("nickname", "created", "updated", "media",
+                    "firstMeet", "lastMeet"));
 
     public PageResult<PersonSummary> search(String keyword, int page, int size,
                                             String sortBy, String sortDir) {
@@ -167,7 +228,9 @@ public class PersonService {
     @Transactional
     public int rescan(String id) {
         Person p = requirePerson(id);
-        return mediaScanService.rescan(id, p.getMediaDir());
+        int count = mediaScanService.rescan(id, p.getMediaDir());
+        thumbService.schedulePerson(id);
+        return count;
     }
 
     public List<Tag> allTags() {

@@ -92,11 +92,14 @@ function DialogContent({
 function DialogTitleBar({
   className,
   titleClassName,
+  closeClassName,
   title,
   ...props
 }: Omit<React.ComponentProps<"div">, "title"> & {
   title: React.ReactNode
   titleClassName?: string
+  /** 关闭按钮的样式覆盖，供深底弹窗替换 ghost 的浅色 hover 态 */
+  closeClassName?: string
 }) {
   return (
     <div
@@ -115,7 +118,10 @@ function DialogTitleBar({
           variant="ghost"
           size="icon"
           aria-label="关闭"
-          className="h-auto w-12 shrink-0 self-stretch rounded-none rounded-tr-xl text-muted-foreground hover:bg-muted hover:text-foreground"
+          className={cn(
+            "h-auto w-12 shrink-0 self-stretch rounded-none rounded-tr-xl text-muted-foreground hover:bg-muted hover:text-foreground",
+            closeClassName
+          )}
         >
           <XIcon className="size-5" />
         </Button>

@@ -26,6 +26,8 @@ const DIR_LABELS: Record<SortKey, Record<SortDir, string>> = {
   updated: { desc: '新→旧', asc: '旧→新' },
   nickname: { desc: 'Z→A', asc: 'A→Z' },
   media: { desc: '多→少', asc: '少→多' },
+  firstMeet: { desc: '晚→早', asc: '早→晚' },
+  lastMeet: { desc: '晚→早', asc: '早→晚' },
 }
 
 export default function HomePage() {
@@ -95,6 +97,8 @@ export default function HomePage() {
               <SelectItem value="updated">修改日期</SelectItem>
               <SelectItem value="nickname">昵称</SelectItem>
               <SelectItem value="media">媒体数量</SelectItem>
+              <SelectItem value="firstMeet">首次见面</SelectItem>
+              <SelectItem value="lastMeet">最近见面</SelectItem>
             </SelectContent>
           </Select>
           <Button

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowUpRight } from 'lucide-react'
 import CardFlip from '@/components/kokonutui/card-flip'
-import { mediaUrl } from '../api'
+import { mediaThumbUrl } from '../api'
 import { chipStyle, tagHues } from '@/lib/tagColor'
 import type { PersonSummary } from '../api/types'
 
@@ -30,7 +30,9 @@ function Field({ label, value }: { label: string; value: string }) {
 export default function PersonCard({ person }: { person: PersonSummary; index: number }) {
   const [imgOk, setImgOk] = useState(true)
   // 裁剪版优先，其次原文件流
-  const coverSrc = person.coverData || (person.coverPath ? mediaUrl(person.id, person.coverPath) : null)
+  // 海报墙用缩略图（后端未配置时 302 回退原图），避免整墙解码原图
+  const coverSrc =
+    person.coverData || (person.coverPath ? mediaThumbUrl(person.id, person.coverPath) : null)
   const hasCover = !!coverSrc && imgOk
   // 姓名可能未知：正面以昵称为准，昵称也缺省时才回退姓名
   const display = person.nickname || person.name || '佚名'

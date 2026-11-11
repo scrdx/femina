@@ -51,6 +51,11 @@ export interface SmoothTabProps {
   activeTextColor?: string;
   /** Accessible name for the tab list. */
   label?: string;
+  /**
+   * 内容区拖拽滑动切换页签。关闭时同时解除 select-none，
+   * 内容可正常框选复制（详情页媒体/文件表格场景需要）。
+   */
+  swipe?: boolean;
 }
 
 // Past the first or last tab the panel moves this fraction of the drag.
@@ -270,6 +275,7 @@ export default function SmoothTab({
   activeColor = "bg-white shadow-[0_1px_2px_rgb(0_0_0/0.08)] dark:bg-zinc-700",
   activeTextColor = "text-zinc-900 dark:text-zinc-50",
   label = "Sections",
+  swipe = true,
 }: SmoothTabProps) {
   const count = items.length;
   const indexOf = (id: string | undefined) =>
@@ -441,7 +447,27 @@ export default function SmoothTab({
   };
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (count < 2 || (e.pointerType === "mouse" && e.button !== 0)) {
+    if (!swipe || count < 2 || (e.pointerType === "mouse" && e.button !== 0)) {
+      return;
+    }
+    // 按压来自交互控件或 Radix 浮层时不启动滑动：否则开下拉、点弹窗按钮等
+    // 操作会被面板的指针捕获劫持，整个标签页跟着鼠标走（Select portal 里的
+    // 选项点击也会沿 React 树冒泡到这里）
+    const t = e.target as HTMLElement;
+    if (
+      t.closest(
+        'button, a, input, select, textarea, [role="option"], [role="combobox"], ' +
+          '[role="menuitem"], [data-radix-popper-content-wrapper]'
+      )
+    ) {
+      return;
+    }
+    // 嵌套弹窗保护：按下处所在的 dialog 与面板所在的 dialog 不是同一个时
+    // （裁剪/文件浏览等嵌套弹窗、弹窗遮罩）不滑动；同一个 dialog 内（如编辑
+    // 弹窗本体的空白区）保留滑动手势
+    const paneDialog = e.currentTarget.closest('[data-slot="dialog-content"]');
+    const targetDialog = t.closest('[data-slot="dialog-content"]');
+    if (targetDialog !== paneDialog) {
       return;
     }
     drag.current = {
@@ -639,7 +665,11 @@ export default function SmoothTab({
       </div>
 
       <div
-        className="relative touch-pan-y select-none overflow-hidden data-dragging:cursor-grabbing"
+        className={cn(
+          "relative overflow-hidden",
+          // select-none 只为滑动手势服务：关掉滑动就放开文本选择
+          swipe && "touch-pan-y select-none data-dragging:cursor-grabbing"
+        )}
         onClickCapture={(e) => {
           if (suppressClick.current) {
             suppressClick.current = false;

@@ -30,27 +30,29 @@ export default function TopBar({ keyword, onKeyword, onAdd }: Props) {
             value={keyword}
             onChange={(e) => onKeyword(e.target.value)}
             placeholder="搜索姓名 / 昵称 / 账号 / 标签…"
-            className="h-10 w-full rounded-lg border border-input bg-card pl-10 pr-9 text-sm transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 focus-visible:outline-none"
+            className={`h-10 w-full rounded-lg border border-input bg-card pl-10 text-sm transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 focus-visible:outline-none ${
+              keyword ? 'pr-16' : 'pr-10'
+            }`}
           />
           {keyword && (
             <button
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              className="absolute right-9 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
               onClick={() => onKeyword('')}
               aria-label="清除搜索"
             >
               <X className="size-4" />
             </button>
           )}
+          {/* 标签云入口收进搜索框内右侧 */}
+          <button
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            onClick={() => setTagCloudOpen(true)}
+            title="标签"
+            aria-label="打开标签"
+          >
+            <Tags className="size-4" />
+          </button>
         </div>
-
-        <button
-          className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-primary shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-lg active:translate-y-0 active:shadow-sm"
-          onClick={() => setTagCloudOpen(true)}
-          title="标签云"
-          aria-label="打开标签云"
-        >
-          <Tags className="size-4" />
-        </button>
 
         <TagCloudDialog
           open={tagCloudOpen}

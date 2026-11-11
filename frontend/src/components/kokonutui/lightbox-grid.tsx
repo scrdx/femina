@@ -25,14 +25,25 @@ import {
   type Ref,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
+import ImageViewToolbar from "@/components/ImageViewToolbar";
+import {
+  useImageView,
+  viewBox,
+  type ImageViewApi,
+} from "@/hooks/useImageView";
+import RasterImage from "@/components/RasterImage";
+import { THUMB_LONG_EDGE } from "@/api";
 
 export interface LightboxImage {
   src: string;
+  /** 缩略图（≤1600px）：网格与查看器适配态用它，缺省回退 src */
+  thumb?: string;
   alt: string;
   /** Natural size, used to fit the open view without waiting for a load. */
   width: number;
@@ -43,6 +54,13 @@ export interface LightboxImage {
 export interface LightboxGridProps {
   images?: LightboxImage[];
   className?: string;
+  /** 翻页越过已加载列表边界时调用（分页场景由父级换页） */
+  onStepBeyond?: (direction: 1 | -1) => void;
+  /** 父级换页后请求打开指定下标；token 变化才生效 */
+  openRequest?: { index: number; token: number } | null;
+  /** 分页上下文：当前页之前/之后还有页（边界处箭头不置灰、可跨页） */
+  hasMoreBefore?: boolean;
+  hasMoreAfter?: boolean;
 }
 
 const unsplash = (id: string, w: number, h: number) =>
@@ -100,7 +118,8 @@ const SETTLE = { type: "spring", duration: 0.35, bounce: 0.2 } as const;
 // The open image keeps this much room around it, and below for the caption.
 const MARGIN = 48;
 const MARGIN_SMALL = 12;
-const CAPTION_ROOM = 56;
+// 图片下方预留带：文件名(+18) 与查看工具栏(+56..+108)。
+const CAPTION_ROOM = 120;
 const OPEN_RADIUS = 10;
 // Drag thresholds: distance in px, speed in px/ms.
 const DISMISS_DISTANCE = 110;
@@ -138,6 +157,13 @@ function fitRect(image: LightboxImage): Rect {
     width,
     height,
   };
+}
+
+/** 旋转后重新适配：90° 的奇数倍按交换宽高拟合外框 */
+function fitRectFor(image: LightboxImage, rot: number): Rect {
+  return rot % 180 !== 0
+    ? fitRect({ ...image, width: image.height, height: image.width })
+    : fitRect(image);
 }
 
 const openClip = () => `inset(0px 0px 0px 0px round ${OPEN_RADIUS}px)`;
@@ -240,6 +266,11 @@ interface ViewerProps {
   alpha: MotionValue<number>;
   fade: MotionValue<number>;
   settled: boolean;
+  view: ImageViewApi;
+  rot: number;
+  hasMoreBefore: boolean;
+  hasMoreAfter: boolean;
+  onRotate: (direction: 1 | -1) => void;
   onClose: (velocity?: { x: number; y: number }) => void;
   onStep: (direction: 1 | -1) => void;
 }
@@ -255,6 +286,11 @@ function Viewer({
   alpha,
   fade,
   settled,
+  view,
+  rot,
+  hasMoreBefore,
+  hasMoreAfter,
+  onRotate,
   onClose,
   onStep,
 }: ViewerProps) {
@@ -264,19 +300,44 @@ function Viewer({
     id: number;
     startX: number;
     startY: number;
-    axis: "x" | "y" | null;
+    axis: "x" | "y" | "pan" | null;
+    /** 按下时的平移起点，pan 模式用绝对落位避免累积误差 */
+    panStart: { x: number; y: number };
     samples: { x: number; y: number; t: number }[];
   } | null>(null);
+  // wheel 门控：开合动画未落定时不缩放。settled 经 ref 读，保持 ref 回调稳定。
+  const settledRef = useRef(settled);
+  settledRef.current = settled;
+  const wheelRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      view.attachWheel(node, () => settledRef.current);
+    },
+    [view.attachWheel]
+  );
   const backdrop = useTransform(fade, (v) => v * 0.92);
   const image = images[index];
-  const hasPrev = index > 0;
-  const hasNext = index < images.length - 1;
+  const box = viewBox(rect, rot);
+  // 分页上下文里列表边界之外还有页：箭头不置灰，越界翻页交给父级
+  const hasPrev = index > 0 || hasMoreBefore;
+  const hasNext = index < images.length - 1 || hasMoreAfter;
+  // 显示尺寸 = 适配盒 × zoom；光栅化与 1:1 展示由 RasterImage 负责
+  const displayW = box.width * view.zoom;
+  const displayH = box.height * view.zoom;
+  // 适配态吃缩略图（解码快、内存小）；放大超过缩略图分辨率切回原图保清晰
+  const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+  const viewerSrc =
+    image.thumb && Math.max(displayW, displayH) * dpr <= THUMB_LONG_EDGE
+      ? image.thumb
+      : image.src;
 
   useEffect(() => {
     closeRef.current?.focus({ preventScroll: true });
   }, []);
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    // React 合成事件沿 React 树冒泡（跨 portal），不拦住的话底层 smooth-tab
+    // 的 onPointerDown 会 setPointerCapture 把指针中途抢走
+    event.stopPropagation();
     if (!settled || event.button !== 0) {
       return;
     }
@@ -285,7 +346,9 @@ function Viewer({
       id: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      axis: null,
+      // 放大后拖拽 = 平移，不再进入关闭/翻页手势
+      axis: view.zoomed ? "pan" : null,
+      panStart: { x: view.panX, y: view.panY },
       samples: [{ x: event.clientX, y: event.clientY, t: event.timeStamp }],
     };
   };
@@ -310,8 +373,13 @@ function Viewer({
     if (!d || d.id !== event.pointerId) {
       return;
     }
+    event.stopPropagation();
     const dx = event.clientX - d.startX;
     const dy = event.clientY - d.startY;
+    if (d.axis === "pan") {
+      view.setPan(d.panStart.x + dx, d.panStart.y + dy);
+      return;
+    }
     if (!d.axis) {
       if (Math.hypot(dx, dy) < AXIS_LOCK) {
         return;
@@ -359,7 +427,12 @@ function Viewer({
     if (!d || d.id !== event.pointerId) {
       return;
     }
+    event.stopPropagation();
     drag.current = null;
+    // 平移就地停住，不做回弹也不触发关闭/翻页
+    if (d.axis === "pan") {
+      return;
+    }
     const first = d.samples[0];
     const last = d.samples.at(-1) ?? first;
     const dt = Math.max(1, last.t - first.t);
@@ -379,6 +452,20 @@ function Viewer({
       onStep(1);
     } else if (event.key === "ArrowLeft" && hasPrev) {
       onStep(-1);
+    } else if (!event.ctrlKey && !event.metaKey && (event.key === "+" || event.key === "=")) {
+      // 不带修饰键才接管，避免劫持浏览器缩放
+      event.preventDefault();
+      view.zoomStep(1);
+    } else if (!event.ctrlKey && !event.metaKey && (event.key === "-" || event.key === "_")) {
+      event.preventDefault();
+      view.zoomStep(-1);
+    } else if (!event.ctrlKey && !event.metaKey && event.key === "0") {
+      event.preventDefault();
+      view.reset();
+    } else if (event.key === "r") {
+      onRotate(1);
+    } else if (event.key === "R") {
+      onRotate(-1);
     } else if (event.key === "Tab") {
       // Keep focus inside the viewer.
       const focusable = Array.from(
@@ -405,8 +492,15 @@ function Viewer({
       aria-modal="true"
       className="fixed inset-0 z-[100]"
       onKeyDown={handleKeyDown}
+      // 查看器内任何区域的按下都不许漏到 React 树下层（smooth-tab 会抢指针）；
+      // 同时收回焦点，保证拖拽之后 Escape / 方向键仍然可用
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        dialogRef.current?.focus({ preventScroll: true });
+      }}
       ref={dialogRef}
       role="dialog"
+      tabIndex={-1}
     >
       <motion.div
         aria-hidden="true"
@@ -416,12 +510,20 @@ function Viewer({
       />
 
       <motion.div
-        className="absolute cursor-grab touch-none select-none overflow-hidden active:cursor-grabbing"
+        className={cn(
+          // 不裁切：放大是整张图片直接变大，超出适配框也完整可见；
+          // flex 居中代替百分比 translate，减少合成层小数偏移
+          "absolute flex touch-none select-none items-center justify-center",
+          view.zoomed
+            ? "cursor-move active:cursor-move"
+            : "cursor-grab active:cursor-grabbing"
+        )}
         onLostPointerCapture={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        ref={wheelRef}
         style={{
           left: rect.left,
           top: rect.top,
@@ -430,17 +532,26 @@ function Viewer({
           x,
           y,
           scale,
-          clipPath: clip,
+          // 放大时解除裁切，让整张图超出适配框完整显示；开合飞行仍走 clip 动画
+          clipPath: view.zoomed ? "none" : clip,
           opacity: alpha,
           willChange: "transform, clip-path",
         }}
       >
-        {/* Vite/React 项目：以普通 img 替代 next/image */}
-        <img
+        {/* Vite/React 项目：以普通 img 替代 next/image。
+            盒宽高在奇数倍 90° 时与外框交换，rotate 后恰好铺满外框；
+            缩放/平移/旋转全部走 transform，与外层开合动画解耦。 */}
+        <RasterImage
           alt={image.alt}
-          className="pointer-events-none h-full w-full object-cover"
-          draggable={false}
-          src={image.src}
+          className="pointer-events-none max-w-none"
+          displayH={displayH}
+          displayW={displayW}
+          natH={image.height}
+          natW={image.width}
+          panX={view.panX}
+          panY={view.panY}
+          rot={rot}
+          src={viewerSrc}
         />
       </motion.div>
 
@@ -496,6 +607,13 @@ function Viewer({
             {image.caption}
           </p>
         ) : null}
+        <ImageViewToolbar
+          className="pointer-events-auto absolute left-1/2 -translate-x-1/2"
+          onRotateCcw={() => onRotate(-1)}
+          onRotateCw={() => onRotate(1)}
+          style={{ top: rect.top + rect.height + 56 }}
+          view={view}
+        />
       </motion.div>
     </div>
   );
@@ -509,11 +627,17 @@ function Viewer({
 export default function LightboxGrid({
   images = DEFAULT_IMAGES,
   className,
+  onStepBeyond,
+  openRequest,
+  hasMoreBefore = false,
+  hasMoreAfter = false,
 }: LightboxGridProps) {
   const [active, setActive] = useState<number | null>(null);
   const [rect, setRect] = useState<Rect | null>(null);
   const [settled, setSettled] = useState(false);
   const [closing, setClosing] = useState(false);
+  // 旋转角由父级持有：setRot 与 setRect 同 tick 批处理，元素盒/外框不错帧
+  const [rot, setRot] = useState(0);
   const thumbs = useRef<(HTMLButtonElement | null)[]>([]);
   const closeTimer = useRef(0);
   const reduceMotion = useReducedMotion();
@@ -523,6 +647,19 @@ export default function LightboxGrid({
   const clip = useMotionValue(openClip());
   const alpha = useMotionValue(1);
   const fade = useMotionValue(0);
+  // 缩放/旋转/平移：独立于外层开合 MotionValue 的查看变换。
+  // oneToOne = 原图自然像素 / 屏幕像素（奇数倍旋转时水平轴对应自然高度）
+  // 换页瞬间 active 可能越界（旧下标 + 新列表）：所有 images[active] 读取走这里
+  const activeImage = active !== null ? images[active] : undefined;
+  const oneToOne =
+    activeImage && rect
+      ? (rot % 180 !== 0 ? activeImage.height : activeImage.width) / rect.width
+      : null;
+  const view = useImageView({
+    frame: rect ? { width: rect.width, height: rect.height } : null,
+    oneToOne,
+    reduceMotion,
+  });
 
   const frameFor = useCallback(
     (index: number, open: Rect): Frame | null => {
@@ -549,6 +686,8 @@ export default function LightboxGrid({
       setRect(target);
       setClosing(false);
       setSettled(false);
+      setRot(0);
+      view.resetAll();
       alpha.set(1);
       if (!from || reduceMotion) {
         x.set(0);
@@ -574,12 +713,12 @@ export default function LightboxGrid({
         setSettled(true)
       );
     },
-    [alpha, clip, fade, frameFor, images, reduceMotion, scale, x, y]
+    [alpha, clip, fade, frameFor, images, reduceMotion, scale, view.resetAll, x, y]
   );
 
   const close = useCallback(
     (velocity?: { x: number; y: number }) => {
-      if (active === null || !rect || closing) {
+      if (active === null || !rect || closing || !images[active]) {
         return;
       }
       setClosing(true);
@@ -590,7 +729,13 @@ export default function LightboxGrid({
         block: "nearest",
         inline: "nearest",
       });
-      const to = frameFor(index, rect);
+      // 关闭瞬间回到适配初态（与 setRect 同 tick 批处理，无中间帧）：
+      // 归航飞行必须从正常姿态起步，旋转/缩放态会扭曲 thumbFrame 的落点
+      view.resetAll();
+      setRot(0);
+      const base = fitRect(images[index]);
+      setRect(base);
+      const to = frameFor(index, base);
       const finish = () => {
         setActive(null);
         setRect(null);
@@ -623,9 +768,29 @@ export default function LightboxGrid({
       rect,
       reduceMotion,
       scale,
+      view.resetAll,
       x,
       y,
     ]
+  );
+
+  const rotateBy = useCallback(
+    (direction: 1 | -1) => {
+      const image = active === null ? undefined : images[active];
+      if (!image || closing) {
+        return;
+      }
+      const next = ((rot + direction * 90) % 360 + 360) % 360;
+      const newRect = fitRectFor(image, next);
+      // 旋转重新适配会改变 oneToOne；同比调整 zoom 使屏幕上的实际比例不变
+      const oNew = (next % 180 !== 0 ? image.height : image.width) / newRect.width;
+      setRot(next);
+      setRect(newRect);
+      if (oneToOne && oNew) {
+        view.rescaleZoom(oNew / oneToOne);
+      }
+    },
+    [active, closing, images, oneToOne, rot, view.rescaleZoom]
   );
 
   const step = useCallback(
@@ -636,9 +801,13 @@ export default function LightboxGrid({
       }
       const next = active + direction;
       if (next < 0 || next >= images.length) {
+        // 越界 = 分页边界：交给父级换页，换完经 openRequest 打开对应位置
+        onStepBeyond?.(direction);
         return;
       }
       setActive(next);
+      view.resetAll();
+      setRot(0);
       setRect(fitRect(images[next]));
       y.set(0);
       scale.set(1);
@@ -655,26 +824,74 @@ export default function LightboxGrid({
       animate(x, 0, { duration: 0.32, ease: EASE });
       animate(alpha, 1, { duration: 0.22, ease: EASE });
     },
-    [active, alpha, clip, closing, fade, images, reduceMotion, scale, x, y]
+    [active, alpha, clip, closing, fade, images, onStepBeyond, reduceMotion, scale, view.resetAll, x, y]
   );
 
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
 
-  // Lock the page behind the viewer and keep the open photo fitted.
+  // 父级换页后请求打开指定下标；useLayoutEffect 避免新列表先渲染一帧旧下标的图
+  const openToken = useRef(0);
+  useLayoutEffect(() => {
+    if (!openRequest || openRequest.token === openToken.current) {
+      return;
+    }
+    openToken.current = openRequest.token;
+    if (openRequest.index >= 0 && openRequest.index < images.length) {
+      open(openRequest.index);
+    }
+  }, [openRequest, images.length, open]);
+
+  // 换页瞬间 active 可能越界：视作未打开，避免 images[active] 取空崩溃
+  const idx = active !== null && active < images.length ? active : null;
+
+  // 预解码相邻图片：切换时 <img> 换 src 能直接命中已解码位图，
+  // 避免大图解码空窗造成的黑帧闪烁
+  const decoded = useRef(new Set<string>());
   useEffect(() => {
     if (active === null) {
+      return;
+    }
+    let alive = true;
+    for (const d of [1, -1]) {
+      const i = active + d;
+      if (i < 0 || i >= images.length) {
+        continue;
+      }
+      // 预解码相邻图：优先缩略图，避免后台解码十几 MB 的原图
+      const src = images[i].thumb ?? images[i].src;
+      if (decoded.current.has(src)) {
+        continue;
+      }
+      const im = new Image();
+      im.src = src;
+      im.decode?.()
+        .then(() => {
+          if (alive) {
+            decoded.current.add(src);
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      alive = false;
+    };
+  }, [active, images]);
+
+  // Lock the page behind the viewer and keep the open photo fitted.
+  useEffect(() => {
+    if (active === null || !images[active]) {
       return;
     }
     const root = document.documentElement;
     const previous = root.style.overflow;
     root.style.overflow = "hidden";
-    const onResize = () => setRect(fitRect(images[active]));
+    const onResize = () => setRect(fitRectFor(images[active], rot));
     window.addEventListener("resize", onResize);
     return () => {
       root.style.overflow = previous;
       window.removeEventListener("resize", onResize);
     };
-  }, [active, images]);
+  }, [active, images, rot]);
 
   return (
     <div className={cn("w-full max-w-xl", className)}>
@@ -692,33 +909,39 @@ export default function LightboxGrid({
                 thumbs.current[index] = node;
               }}
               // The open photo has left its slot; the slot stays empty until it returns.
-              style={{ opacity: active === index ? 0 : 1 }}
+              style={{ opacity: idx === index ? 0 : 1 }}
               type="button"
             >
               <img
                 alt=""
                 className="h-full w-full object-cover transition-[filter] duration-200 hover:brightness-95"
+                decoding="async"
                 draggable={false}
                 loading="lazy"
-                src={image.src}
+                src={image.thumb ?? image.src}
               />
             </button>
           </li>
         ))}
       </ul>
-      {active !== null && rect
+      {idx !== null && rect
         ? createPortal(
             <Viewer
               alpha={alpha}
               clip={clip}
               fade={fade}
+              hasMoreAfter={hasMoreAfter}
+              hasMoreBefore={hasMoreBefore}
               images={images}
-              index={active}
+              index={idx}
               onClose={close}
+              onRotate={rotateBy}
               onStep={step}
               rect={rect}
+              rot={rot}
               scale={scale}
               settled={settled && !closing}
+              view={view}
               x={x}
               y={y}
             />,

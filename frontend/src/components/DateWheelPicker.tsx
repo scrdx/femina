@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState, type Ref } from 'react'
 import { CalendarDays, ChevronDown } from 'lucide-react'
 import WheelPicker, { type WheelColumn } from '@/components/kokonutui/wheel-picker'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -11,15 +11,10 @@ import { cn } from '@/lib/utils'
  * 值为字符串：'YYYY-MM-DD' 或 'YYYY'，空串表示未填。
  */
 
-const YEAR_MIN = 1940
-const YEAR_MAX = 2035
+const DEFAULT_YEAR_MIN = 1940
+const DEFAULT_YEAR_MAX = 2035
 
 const pad = (n: number) => String(n).padStart(2, '0')
-
-const yearOptions = Array.from({ length: YEAR_MAX - YEAR_MIN + 1 }, (_, i) => {
-  const y = YEAR_MIN + i
-  return { value: String(y), label: `${y} 年` }
-})
 
 function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate()
@@ -33,10 +28,46 @@ interface Props {
   className?: string
   /** 无边框变体：嵌入 FieldShell 输入组时使用 */
   bare?: boolean
+  /** 鼓轮组标题；缺省按 mode 取「出生日期 / 出生年份」 */
+  label?: string
+  /** 受控开合（如表格草稿行需要点「新增」即弹出） */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** 触发按钮 ref，供外部聚焦 */
+  triggerRef?: Ref<HTMLButtonElement>
+  /** 年份鼓轮范围；缺省 1940–2035（出生日期语义），其他场景可放宽 */
+  yearMin?: number
+  yearMax?: number
 }
 
-export default function DateWheelPicker({ mode, value, onChange, placeholder, className, bare }: Props) {
-  const [open, setOpen] = useState(false)
+export default function DateWheelPicker({
+  mode,
+  value,
+  onChange,
+  placeholder,
+  className,
+  bare,
+  label,
+  open: openProp,
+  onOpenChange,
+  triggerRef,
+  yearMin = DEFAULT_YEAR_MIN,
+  yearMax = DEFAULT_YEAR_MAX,
+}: Props) {
+  const yearOptions = useMemo(
+    () =>
+      Array.from({ length: yearMax - yearMin + 1 }, (_, i) => {
+        const y = yearMin + i
+        return { value: String(y), label: `${y} 年` }
+      }),
+    [yearMin, yearMax]
+  )
+  const [openState, setOpenState] = useState(false)
+  const open = openProp ?? openState
+  const setOpen = (o: boolean) => {
+    onOpenChange?.(o)
+    if (openProp === undefined) setOpenState(o)
+  }
 
   // 解析当前值；未填时鼓轮停在默认位置（不提交）
   const parsed = (() => {
@@ -97,6 +128,7 @@ export default function DateWheelPicker({ mode, value, onChange, placeholder, cl
       <PopoverTrigger asChild>
         <button
           type="button"
+          ref={triggerRef}
           className={cn(
             bare
               ? 'group flex w-full min-w-0 flex-1 items-center justify-between gap-2 bg-transparent px-2.5 text-left text-sm'
@@ -123,7 +155,7 @@ export default function DateWheelPicker({ mode, value, onChange, placeholder, cl
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={6} className="w-auto rounded-lg border-border bg-popover p-4 shadow-[0_8px_24px_-8px_rgb(0_0_0/0.18)]">
         <WheelPicker
-          label={mode === 'date' ? '出生日期' : '出生年份'}
+          label={label ?? (mode === 'date' ? '出生日期' : '出生年份')}
           columns={columns}
           value={mode === 'date' ? { y: parsed.y, m: parsed.m, d: parsed.d } : { y: parsed.y }}
           onValueChange={handleValueChange}

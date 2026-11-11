@@ -65,7 +65,9 @@
         SELECT p.id, p.name, p.nickname, p.cover_path, p.cover_data,
                p.birth_year_only, p.birth_date, p.birth_year,
                p.hometown, p.education, p.height_cm, p.weight_kg,
-               (SELECT COUNT(*) FROM media m WHERE m.person_id = p.id) AS media_count
+               (SELECT COUNT(*) FROM media m WHERE m.person_id = p.id) AS media_count,
+               (SELECT MIN(mr.meet_date) FROM meet_record mr WHERE mr.person_id = p.id) AS first_meet,
+               (SELECT MAX(mr.meet_date) FROM meet_record mr WHERE mr.person_id = p.id) AS last_meet
         FROM person p
         <include refid="searchWhere"/>
         ORDER BY
@@ -73,6 +75,9 @@
             <when test="sortBy == 'nickname'">COALESCE(p.nickname, '')</when>
             <when test="sortBy == 'updated'">p.updated_at</when>
             <when test="sortBy == 'media'">media_count</when>
+            <!-- 无见面记录的人恒垫底，方向只作用于日期本身 -->
+            <when test="sortBy == 'firstMeet'">(first_meet IS NULL), first_meet</when>
+            <when test="sortBy == 'lastMeet'">(last_meet IS NULL), last_meet</when>
             <otherwise>p.created_at</otherwise>
         </choose>
         <choose>

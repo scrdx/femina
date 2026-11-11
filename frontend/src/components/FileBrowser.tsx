@@ -56,7 +56,7 @@ export default function FileBrowser({ mode, initialPath, title, onPick, onClose 
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl gap-0 p-0">
+      <DialogContent className="max-w-2xl gap-0 p-0 sm:max-w-2xl" showCloseButton={false}>
         <DialogTitleBar title={title || (mode === 'dir' ? '选择媒体目录' : '选择封面图片')} />
         <div className="p-4">
 

@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
+  ArrowDownWideNarrow,
   ArrowLeft,
+  ArrowUpNarrowWide,
+  CalendarDays,
   Clapperboard,
   FolderTree,
   Image as ImageIcon,
@@ -15,38 +18,102 @@ import LightboxGrid, { type LightboxImage } from '@/components/kokonutui/lightbo
 import ParticleButton from '@/components/kokonutui/particle-button'
 import SmoothTab from '@/components/kokonutui/smooth-tab'
 import { Button } from '@/components/ui/button'
-import { mediaUrl, personApi } from '../api'
-import type { MediaItem, PersonDetail } from '../api/types'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { mediaThumbUrl, mediaUrl, personApi } from '../api'
+import type { MediaItem, MediaSortKey, PersonDetail } from '../api/types'
 import AccountMenu from '../components/AccountMenu'
+import MeetRecordTable from '../components/MeetRecordTable'
+import Pagination from '../components/Pagination'
 import PersonFileBrowser from '../components/PersonFileBrowser'
 import { chipStyle, tagHues } from '@/lib/tagColor'
 import PersonFormModal from '../components/PersonFormModal'
 import VideoDialog from '../components/VideoDialog'
 
+const DEFAULT_PAGE_SIZE = 30
+const PAGE_SIZE_OPTIONS = [30, 60, 120]
+
+interface SortState {
+  key: MediaSortKey
+  dir: 'asc' | 'desc'
+}
+
+const SORT_LABELS: [MediaSortKey, string][] = [
+  ['name', '文件名'],
+  ['size', '文件大小'],
+  ['dims', '尺寸'],
+  ['created', '创建时间'],
+  ['modified', '修改时间'],
+]
+
+/** 排序 + 每页数量工具栏：与首页排序组件同款（shadcn Select + outline 方向按钮），控件靠左 */
+function MediaSortBar({
+  sort,
+  onSort,
+  pageSize,
+  onPageSize,
+  withDims,
+}: {
+  sort: SortState
+  onSort: (s: SortState) => void
+  pageSize: number
+  onPageSize: (n: number) => void
+  withDims?: boolean
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-muted-foreground">排序</span>
+      <Select value={sort.key} onValueChange={(v) => onSort({ ...sort, key: v as MediaSortKey })}>
+        <SelectTrigger className="h-9 w-[124px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="popper">
+          {SORT_LABELS.filter(([k]) => withDims || k !== 'dims').map(([k, label]) => (
+            <SelectItem key={k} value={k}>
+              {label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        variant="outline"
+        className="h-9 gap-1.5 px-3 text-muted-foreground"
+        title="切换升序 / 降序"
+        onClick={() => onSort({ ...sort, dir: sort.dir === 'asc' ? 'desc' : 'asc' })}
+      >
+        {sort.dir === 'desc' ? (
+          <ArrowDownWideNarrow className="size-4" />
+        ) : (
+          <ArrowUpNarrowWide className="size-4" />
+        )}
+        {sort.dir === 'desc' ? '降序' : '升序'}
+      </Button>
+      <span className="ml-4 text-xs text-muted-foreground">每页</span>
+      <Select value={String(pageSize)} onValueChange={(v) => onPageSize(Number(v))}>
+        <SelectTrigger className="h-9 w-[88px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="popper">
+          {PAGE_SIZE_OPTIONS.map((n) => (
+            <SelectItem key={n} value={String(n)}>
+              {n} 个
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
 function birthText(p: PersonDetail): string {
   if (p.birthYearOnly) return p.birthYear ? `${p.birthYear} 年` : '—'
   if (p.birthDate) return p.birthDate
   return p.birthYear ? `${p.birthYear} 年` : '—'
-}
-
-/** 探测图片自然尺寸，供 LightboxGrid 打开时精确适配 */
-function useNaturalSizes(personId: string, photos: MediaItem[]) {
-  const [sizes, setSizes] = useState<Record<string, { w: number; h: number }>>({})
-  useEffect(() => {
-    let alive = true
-    photos.forEach((m) => {
-      const img = new Image()
-      img.onload = () => {
-        if (!alive) return
-        setSizes((s) => ({ ...s, [m.relPath]: { w: img.naturalWidth, h: img.naturalHeight } }))
-      }
-      img.src = mediaUrl(personId, m.relPath)
-    })
-    return () => {
-      alive = false
-    }
-  }, [personId, photos])
-  return sizes
 }
 
 export default function PersonDetailPage() {
@@ -57,6 +124,39 @@ export default function PersonDetailPage() {
   const [notFound, setNotFound] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [video, setVideo] = useState<MediaItem | null>(null)
+  // 媒体明细传统分页：只取当前页，避免几千节点一次进 DOM
+  const [photos, setPhotos] = useState<MediaItem[]>([])
+  const [photoTotal, setPhotoTotal] = useState(0)
+  const [photoPage, setPhotoPage] = useState(1)
+  const [photoSort, setPhotoSort] = useState<SortState>({ key: 'name', dir: 'asc' })
+  const [photoSize, setPhotoSize] = useState(DEFAULT_PAGE_SIZE)
+  const [videos, setVideos] = useState<MediaItem[]>([])
+  const [videoTotal, setVideoTotal] = useState(0)
+  const [videoPage, setVideoPage] = useState(1)
+  const [videoSort, setVideoSort] = useState<SortState>({ key: 'name', dir: 'asc' })
+  const [videoSize, setVideoSize] = useState(DEFAULT_PAGE_SIZE)
+  const [meetCount, setMeetCount] = useState(0)
+  const [openReq, setOpenReq] = useState<{ index: number; token: number } | null>(null)
+  const openToken = useRef(0)
+
+  const fetchMedia = useCallback(
+    async (type: 'PHOTO' | 'VIDEO', page: number, sort: SortState, size: number) => {
+      const r = await personApi.mediaPage(id, type, page, {
+        size,
+        sort: sort.key,
+        dir: sort.dir,
+      })
+      if (type === 'PHOTO') {
+        setPhotos(r.items)
+        setPhotoTotal(r.total)
+      } else {
+        setVideos(r.items)
+        setVideoTotal(r.total)
+      }
+      return r.items
+    },
+    [id]
+  )
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -64,6 +164,8 @@ export default function PersonDetailPage() {
       const d = await personApi.detail(id)
       setPerson(d)
       setNotFound(false)
+      setPhotoTotal(d.photoCount)
+      setVideoTotal(d.videoCount)
     } catch (e: any) {
       setNotFound(true)
       toast.error(e.message || '加载失败')
@@ -76,7 +178,72 @@ export default function PersonDetailPage() {
     load()
   }, [load])
 
-  const sizes = useNaturalSizes(person?.id ?? '', person?.photos ?? [])
+  // 换人时复位页码、排序与每页数量
+  useEffect(() => {
+    setPhotoPage(1)
+    setVideoPage(1)
+    setPhotoSort({ key: 'name', dir: 'asc' })
+    setVideoSort({ key: 'name', dir: 'asc' })
+    setPhotoSize(DEFAULT_PAGE_SIZE)
+    setVideoSize(DEFAULT_PAGE_SIZE)
+  }, [id])
+
+  useEffect(() => {
+    if (!person) return
+    fetchMedia('PHOTO', photoPage, photoSort, photoSize).catch((e) =>
+      toast.error(e.message || '媒体加载失败')
+    )
+  }, [person, photoPage, photoSort, photoSize, fetchMedia])
+
+  useEffect(() => {
+    if (!person) return
+    fetchMedia('VIDEO', videoPage, videoSort, videoSize).catch((e) =>
+      toast.error(e.message || '媒体加载失败')
+    )
+  }, [person, videoPage, videoSort, videoSize, fetchMedia])
+
+  const photoPages = Math.max(1, Math.ceil(photoTotal / photoSize))
+  const videoPages = Math.max(1, Math.ceil(videoTotal / videoSize))
+
+  const gotoPhotoPage = useCallback(
+    async (p: number) => {
+      const items = await fetchMedia('PHOTO', p, photoSort, photoSize)
+      setPhotoPage(p)
+      window.scrollTo({ top: 0 })
+      return items
+    },
+    [fetchMedia, photoSort, photoSize]
+  )
+
+  const gotoVideoPage = useCallback(
+    async (p: number) => {
+      const items = await fetchMedia('VIDEO', p, videoSort, videoSize)
+      setVideoPage(p)
+      window.scrollTo({ top: 0 })
+      return items
+    },
+    [fetchMedia, videoSort, videoSize]
+  )
+
+  /** lightbox 翻页越过当前页边界：换页后打开新页的首/末张 */
+  const handleStepBeyond = useCallback(
+    async (dir: 1 | -1) => {
+      try {
+        if (dir === 1 && photoPage < photoPages) {
+          await gotoPhotoPage(photoPage + 1)
+          openToken.current += 1
+          setOpenReq({ index: 0, token: openToken.current })
+        } else if (dir === -1 && photoPage > 1) {
+          const items = await gotoPhotoPage(photoPage - 1)
+          openToken.current += 1
+          setOpenReq({ index: items.length - 1, token: openToken.current })
+        }
+      } catch (e: any) {
+        toast.error(e.message || '媒体加载失败')
+      }
+    },
+    [gotoPhotoPage, photoPage, photoPages]
+  )
 
   const onRescan = async () => {
     const r = await personApi.rescan(id)
@@ -125,11 +292,12 @@ export default function PersonDetailPage() {
 
   const hues = tagHues(person.tags)
 
-  const lightboxImages: LightboxImage[] = person.photos.map((m) => ({
+  const lightboxImages: LightboxImage[] = photos.map((m) => ({
     src: mediaUrl(person.id, m.relPath),
+    thumb: mediaThumbUrl(person.id, m.relPath),
     alt: m.fileName,
-    width: sizes[m.relPath]?.w ?? 1200,
-    height: sizes[m.relPath]?.h ?? 1600,
+    width: m.width || 1200,
+    height: m.height || 1600,
     caption: m.fileName,
   }))
 
@@ -276,32 +444,81 @@ export default function PersonDetailPage() {
           <SmoothTab
             className="max-w-none"
             label="媒体"
+            swipe={false}
             items={[
               {
                 id: 'photos',
-                title: `照片 (${person.photos.length})`,
+                title: `照片 (${photoTotal})`,
                 icon: ImageIcon,
                 content:
-                  person.photos.length === 0 ? (
+                  photoTotal === 0 ? (
                     <div className="rounded-xl border border-dashed border-border py-14 text-center text-sm text-muted-foreground">
                       暂无照片{person.mediaDir ? '，可点击「重新扫描媒体」刷新' : ''}
                     </div>
                   ) : (
-                    <LightboxGrid className="max-w-none" images={lightboxImages} />
+                    <>
+                      {/* 排序/每页靠左，页码靠右：图多时不必滚到底才能换页 */}
+                      <div className="mb-4 flex flex-wrap items-center gap-2">
+                        <MediaSortBar
+                          onPageSize={(n) => {
+                            setPhotoSize(n)
+                            setPhotoPage(1)
+                          }}
+                          onSort={setPhotoSort}
+                          pageSize={photoSize}
+                          sort={photoSort}
+                          withDims
+                        />
+                        <Pagination
+                          className="ml-auto py-0"
+                          onChange={gotoPhotoPage}
+                          page={photoPage}
+                          pages={photoPages}
+                          total={photoTotal}
+                        />
+                      </div>
+                      <LightboxGrid
+                        className="max-w-none"
+                        hasMoreAfter={photoPage < photoPages}
+                        hasMoreBefore={photoPage > 1}
+                        images={lightboxImages}
+                        onStepBeyond={handleStepBeyond}
+                        openRequest={openReq}
+                      />
+                    </>
                   ),
               },
               {
                 id: 'videos',
-                title: `视频 (${person.videos.length})`,
+                title: `视频 (${videoTotal})`,
                 icon: Clapperboard,
                 content:
-                  person.videos.length === 0 ? (
+                  videoTotal === 0 ? (
                     <div className="rounded-xl border border-dashed border-border py-14 text-center text-sm text-muted-foreground">
                       暂无视频
                     </div>
                   ) : (
+                    <>
+                    <div className="mb-4 flex flex-wrap items-center gap-2">
+                      <MediaSortBar
+                        onPageSize={(n) => {
+                          setVideoSize(n)
+                          setVideoPage(1)
+                        }}
+                        onSort={setVideoSort}
+                        pageSize={videoSize}
+                        sort={videoSort}
+                      />
+                      <Pagination
+                        className="ml-auto py-0"
+                        onChange={gotoVideoPage}
+                        page={videoPage}
+                        pages={videoPages}
+                        total={videoTotal}
+                      />
+                    </div>
                     <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-                      {person.videos.map((m) => (
+                      {videos.map((m) => (
                         <button
                           key={m.id}
                           type="button"
@@ -326,6 +543,7 @@ export default function PersonDetailPage() {
                         </button>
                       ))}
                     </div>
+                    </>
                   ),
               },
               {
@@ -333,6 +551,12 @@ export default function PersonDetailPage() {
                 title: '文件',
                 icon: FolderTree,
                 content: <PersonFileBrowser personId={person.id} mediaDir={person.mediaDir} />,
+              },
+              {
+                id: 'meet',
+                title: `见面 (${meetCount})`,
+                icon: CalendarDays,
+                content: <MeetRecordTable onCount={setMeetCount} personId={person.id} />,
               },
             ]}
           />

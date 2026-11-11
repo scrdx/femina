@@ -2,26 +2,96 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.femina.mapper.MediaMapper">
 
+    <sql id="cols">
+        id, person_id, type, rel_path, file_name, ext, file_size,
+        width, height, modified_at, file_created_at, created_at
+    </sql>
+
+    <!-- 排序白名单：列名固定映射，dir 只接受 asc/desc（Service 层再兜底校验） -->
+    <sql id="pagedOrder">
+        <choose>
+            <when test="sort == 'size'">
+                ORDER BY file_size
+                <choose><when test="dir == 'desc'">DESC</when><otherwise>ASC</otherwise></choose>,
+                         file_name ASC, id ASC
+            </when>
+            <when test="sort == 'dims'">
+                ORDER BY (width IS NULL OR width = 0 OR height IS NULL OR height = 0) ASC,
+                         COALESCE(width, 0) * COALESCE(height, 0)
+                <choose><when test="dir == 'desc'">DESC</when><otherwise>ASC</otherwise></choose>,
+                         file_name ASC, id ASC
+            </when>
+            <when test="sort == 'created'">
+                ORDER BY (file_created_at IS NULL) ASC, file_created_at
+                <choose><when test="dir == 'desc'">DESC</when><otherwise>ASC</otherwise></choose>,
+                         file_name ASC, id ASC
+            </when>
+            <when test="sort == 'modified'">
+                ORDER BY (modified_at IS NULL) ASC, modified_at
+                <choose><when test="dir == 'desc'">DESC</when><otherwise>ASC</otherwise></choose>,
+                         file_name ASC, id ASC
+            </when>
+            <otherwise>
+                ORDER BY file_name
+                <choose><when test="dir == 'desc'">DESC</when><otherwise>ASC</otherwise></choose>,
+                         id ASC
+            </otherwise>
+        </choose>
+    </sql>
+
     <insert id="batchInsert">
-        INSERT IGNORE INTO media (person_id, type, rel_path, file_name, ext, file_size) VALUES
+        INSERT IGNORE INTO media
+            (person_id, type, rel_path, file_name, ext, file_size, width, height,
+             modified_at, file_created_at)
+        VALUES
         <foreach collection="list" item="m" separator=",">
-            (#{m.personId}, #{m.type}, #{m.relPath}, #{m.fileName}, #{m.ext}, #{m.fileSize})
+            (#{m.personId}, #{m.type}, #{m.relPath}, #{m.fileName}, #{m.ext}, #{m.fileSize},
+             #{m.width}, #{m.height}, #{m.modifiedAt}, #{m.fileCreatedAt})
         </foreach>
     </insert>
 
     <select id="findByPerson" resultType="com.femina.model.Media">
-        SELECT id, person_id, type, rel_path, file_name, ext, file_size, created_at
+        SELECT <include refid="cols"/>
         FROM media WHERE person_id = #{personId}
         ORDER BY type DESC, file_name
     </select>
+
+    <select id="findByPersonPaged" resultType="com.femina.model.Media">
+        SELECT <include refid="cols"/>
+        FROM media WHERE person_id = #{personId}
+        <if test="type != null and type != ''">AND type = #{type}</if>
+        <include refid="pagedOrder"/>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countByPerson" resultType="long">
+        SELECT COUNT(*) FROM media WHERE person_id = #{personId}
+        <if test="type != null and type != ''">AND type = #{type}</if>
+    </select>
+
+    <select id="findMissingMeta" resultType="com.femina.model.Media">
+        SELECT m.id, m.person_id, m.type, m.rel_path, m.file_name, m.ext, m.file_size,
+               m.width, m.height, m.modified_at, m.file_created_at, m.created_at,
+               p.media_dir AS mediaDir
+        FROM media m JOIN person p ON p.id = m.person_id
+        WHERE m.modified_at IS NULL OR m.file_created_at IS NULL
+           OR (m.type = 'PHOTO' AND (m.width IS NULL OR m.width = 0))
+        LIMIT 1000
+    </select>
+
+    <update id="updateMeta">
+        UPDATE media
+        SET width = #{width}, height = #{height}, modified_at = #{modifiedAt},
+            file_created_at = #{fileCreatedAt}, file_size = #{fileSize}
+        WHERE id = #{id}
+    </update>
 
     <delete id="deleteByPerson">
         DELETE FROM media WHERE person_id = #{personId}
     </delete>
 
     <delete id="deleteByPersonNotInPaths">
-        DELETE FROM media
-        WHERE person_id = #{personId}
+        DELETE FROM media WHERE person_id = #{personId}
         <if test="paths != null and paths.size() > 0">
             AND rel_path NOT IN
             <foreach collection="paths" item="path" open="(" separator="," close=")">

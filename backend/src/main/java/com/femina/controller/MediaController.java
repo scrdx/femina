@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.femina.common.ApiException;
 import com.femina.model.Person;
 import com.femina.service.PersonService;
+import com.femina.service.ThumbService;
 import com.femina.util.FilePathUtil;
 
 /**
@@ -62,9 +63,37 @@ public class MediaController {
     }
 
     private final PersonService personService;
+    private final ThumbService thumbService;
 
-    public MediaController(PersonService personService) {
+    public MediaController(PersonService personService, ThumbService thumbService) {
         this.personService = personService;
+        this.thumbService = thumbService;
+    }
+
+    /**
+     * 缩略图：未配置缩略图目录、小图、或生成失败时 302 回退原图接口，
+     * 前端可无脑使用本地址。首次请求兜底同步生成，之后命中磁盘缓存。
+     */
+    @GetMapping("/thumb")
+    public void thumb(@RequestParam String personId,
+                      @RequestParam String path,
+                      HttpServletRequest request,
+                      HttpServletResponse response) throws IOException {
+        Person person = personService.requirePerson(personId);
+        String fallback = "/api/media/file?" + request.getQueryString();
+        if (!thumbService.enabled() || StringUtils.isBlank(path)) {
+            response.sendRedirect(fallback);
+            return;
+        }
+        if (!thumbService.ensure(person, path)) {
+            response.sendRedirect(fallback);
+            return;
+        }
+        Path thumb = thumbService.thumbPathFor(personId, path);
+        response.setContentType("image/jpeg");
+        response.setContentLengthLong(Files.size(thumb));
+        response.setHeader("Cache-Control", "private, max-age=3600");
+        Files.copy(thumb, response.getOutputStream());
     }
 
     @GetMapping("/file")

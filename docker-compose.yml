@@ -21,6 +21,8 @@ services:
       FEMINA_JWT_SECRET: ${FEMINA_JWT_SECRET:-please-change-this-jwt-secret}
       # 容器内媒体根目录（添加人物时文件浏览器的默认起点）
       FEMINA_MEDIA_ROOT: /media
+      # 缩略图目录（容器内路径）。在 .env 中设 FEMINA_THUMB_DIR= 可关闭缩略图功能
+      FEMINA_THUMB_DIR: ${FEMINA_THUMB_DIR:-/thumbs}
     extra_hosts:
       # 让容器可以用 host.docker.internal 访问 NAS 宿主机上的 MySQL
       - "host.docker.internal:host-gateway"
@@ -28,3 +30,6 @@ services:
       # 存放照片/视频的目录挂载到容器 /media，实际路径在 .env 里用 MEDIA_DIR 指定。
       # 以【只读】方式挂载，从操作系统层面保证系统绝不会修改或删除你的媒体文件。
       - ${MEDIA_DIR:-./data/media}:/media:ro
+      # 缩略图缓存目录（读写），实际路径在 .env 里用 THUMB_DIR 指定。
+      # 与媒体目录分离：媒体只读的铁律不受影响。
+      - ${THUMB_DIR:-./data/thumbs}:/thumbs

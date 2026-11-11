@@ -1,6 +1,7 @@
 package com.femina.model.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -80,6 +81,15 @@ public class PersonDtos {
         /** 媒体文件数（照片+视频），用于排序展示 */
         private Long mediaCount;
         private List<String> tags = new ArrayList<>();
+        /** 首次/最近见面日期（无记录为 null），供首页排序 */
+        private LocalDate firstMeet;
+        private LocalDate lastMeet;
+    }
+
+    /** 新增见面记录请求：meetDate 可为 null / 空串（见面时间非必填） */
+    @Data
+    public static class MeetForm {
+        private String meetDate;
     }
 
     /** 详情页完整数据 */
@@ -102,8 +112,9 @@ public class PersonDtos {
         private String createdAt;
         private List<AccountEntry> accounts = new ArrayList<>();
         private List<String> tags = new ArrayList<>();
-        private List<Media> photos = new ArrayList<>();
-        private List<Media> videos = new ArrayList<>();
+        /** 媒体明细走 GET /api/persons/{id}/media 分页获取，详情只带计数 */
+        private long photoCount;
+        private long videoCount;
     }
 
     /** 人物媒体目录下的文件浏览节点（只读） */

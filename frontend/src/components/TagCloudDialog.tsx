@@ -64,7 +64,7 @@ export default function TagCloudDialog({ open, onClose, onPick }: Props) {
         <DialogTitleBar
           title={
             <span className="flex items-center gap-2">
-              <Tags className="size-4 text-primary" /> 标签云
+              <Tags className="size-4 text-primary" /> 标签
             </span>
           }
         />
