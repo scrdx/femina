@@ -35,6 +35,9 @@ public class SchemaInitializer {
             "ALTER TABLE media ADD COLUMN height INT NULL",
             "ALTER TABLE media ADD COLUMN modified_at DATETIME NULL",
             "ALTER TABLE media ADD COLUMN file_created_at DATETIME NULL",
+            // 评分与固定置顶；NOT NULL DEFAULT 0 保证存量行有确定初值（0=未评分/未固定）
+            "ALTER TABLE person ADD COLUMN rating TINYINT NOT NULL DEFAULT 0",
+            "ALTER TABLE person ADD COLUMN pinned TINYINT NOT NULL DEFAULT 0",
     };
 
     private final DataSource dataSource;

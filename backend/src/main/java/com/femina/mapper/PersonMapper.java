@@ -17,7 +17,16 @@ public interface PersonMapper {
 
     int deleteById(@Param("id") String id);
 
-    /** 关键字搜索（姓名/昵称/账号/标签），分页 + 排序（sortBy: nickname/created/updated/media） */
+    /** 快捷打分（0 = 清除评分）：单字段更新，不走全量 update */
+    int updateRating(@Param("id") String id, @Param("rating") int rating);
+
+    /** 固定 / 取消固定 */
+    int updatePinned(@Param("id") String id, @Param("pinned") boolean pinned);
+
+    /**
+     * 关键字搜索（姓名/昵称/账号/标签），分页 + 排序
+     * （sortBy: nickname/created/updated/media/firstMeet/lastMeet/rating；固定的人恒排最前）
+     */
     List<PersonSummary> search(@Param("keyword") String keyword,
                                @Param("offset") int offset,
                                @Param("limit") int limit,

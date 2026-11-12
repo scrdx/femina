@@ -32,6 +32,8 @@ import MeetRecordTable from '../components/MeetRecordTable'
 import Pagination from '../components/Pagination'
 import PersonFileBrowser from '../components/PersonFileBrowser'
 import { chipStyle, tagHues } from '@/lib/tagColor'
+import StarRating from '../components/StarRating'
+import PinnedFold from '../components/PinnedFold'
 import PersonFormModal from '../components/PersonFormModal'
 import VideoDialog from '../components/VideoDialog'
 
@@ -177,6 +179,20 @@ export default function PersonDetailPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  /** 标题旁的评分：与卡片右键菜单同源，点击即改、点当前星级清除；失败回滚 */
+  const handleRate = async (rating: number) => {
+    if (!person) return
+    const prev = person.rating ?? 0
+    if (prev === rating) return
+    setPerson({ ...person, rating })
+    try {
+      await personApi.rate(person.id, rating)
+    } catch (e: any) {
+      setPerson({ ...person, rating: prev })
+      toast.error(e.message || '打分失败')
+    }
+  }
 
   // 换人时复位页码、排序与每页数量
   useEffect(() => {
@@ -339,13 +355,24 @@ export default function PersonDetailPage() {
                 {(person.nickname || person.name || '?').charAt(0)}
               </div>
             )}
+            {/* 与海报墙卡片同一套折角标记：固定的人在这里也看得出来 */}
+            {!!person.pinned && <PinnedFold />}
           </div>
 
           <div className="min-w-0">
             {/* 昵称为必填主显示名，作为标题；姓名选填，作为副行 */}
-            <h1 className="detail-name font-heading text-4xl font-semibold text-foreground">
-              {person.nickname || person.name || '未命名'}
-            </h1>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+              <h1 className="detail-name font-heading text-4xl font-semibold text-foreground">
+                {person.nickname || person.name || '未命名'}
+              </h1>
+              {/* 未评分也展示 5 颗空星：这里是打分的正式入口之一，需要可发现 */}
+              <StarRating
+                variant="input"
+                size={22}
+                value={person.rating ?? 0}
+                onChange={handleRate}
+              />
+            </div>
             {person.name && person.name !== person.nickname && (
               <div className="mt-2 font-heading text-lg italic text-muted-foreground">
                 {person.name}

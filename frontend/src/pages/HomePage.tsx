@@ -24,6 +24,7 @@ const PAGE_SIZE = 24
 const DIR_LABELS: Record<SortKey, Record<SortDir, string>> = {
   created: { desc: '新→旧', asc: '旧→新' },
   updated: { desc: '新→旧', asc: '旧→新' },
+  rating: { desc: '高→低', asc: '低→高' },
   nickname: { desc: 'Z→A', asc: 'A→Z' },
   media: { desc: '多→少', asc: '少→多' },
   firstMeet: { desc: '晚→早', asc: '早→晚' },
@@ -41,7 +42,9 @@ export default function HomePage() {
   // 静默刷新中（排序/关键字切换）：保留旧卡片做位移动画，仅轻微降透明度提示
   const [refreshing, setRefreshing] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
-  const [sortBy, setSortBy] = useState<SortKey>('created')
+  // 默认按评分从高到低；都没评分时所有人 rating=0 同分，靠 created_at DESC 兜底，
+  // 表现与原来的「添加日期」默认序一致，不构成回归
+  const [sortBy, setSortBy] = useState<SortKey>('rating')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const firstRun = useRef(true)
 
@@ -81,6 +84,68 @@ export default function HomePage() {
 
   const refresh = () => load(debounced, 1, false)
 
+  /**
+   * 本地重排：items 本来就是服务端按 ORDER BY 排好的，所以只需复刻其中会因
+   * 快捷操作而变化的两条规则——「p.pinned DESC 前置」和 rating 排序本身。
+   * 两次都用稳定排序，保证同组内其余字段（昵称/日期/媒体数…）的既有顺序不被打乱。
+   */
+  const reorder = (list: PersonSummary[]) => {
+    const next = [...list]
+    if (sortBy === 'rating') {
+      next.sort((a, b) => {
+        const ra = a.rating || 0
+        const rb = b.rating || 0
+        // 未评分（0）恒垫底，方向只作用于评分本身（与后端 (p.rating = 0), p.rating 一致）
+        if (!ra !== !rb) return ra ? -1 : 1
+        return sortDir === 'asc' ? ra - rb : rb - ra
+      })
+    }
+    return next.sort((a, b) => Number(b.pinned) - Number(a.pinned))
+  }
+
+  // 快捷打分/固定走乐观更新：先本地改（motion layout 自动播重排动画），失败再回滚。
+  // 刻意不调 refresh()——那会回到第 1 页、闪一次全屏 Loader，并丢掉已「加载更多」的后续页。
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+
+  // 菜单开着时只改数据、不重排：Radix 的右键菜单锚定在点击那一刻的虚拟坐标点上，
+  // 卡片当场滑走的话菜单会静止悬在原地。收起时再 flush 一次（reorder 幂等）。
+  const patch = (id: string, p: Partial<PersonSummary>) =>
+    setItems((prev) => {
+      const merged = prev.map((x) => (x.id === id ? { ...x, ...p } : x))
+      return menuOpenId ? merged : reorder(merged)
+    })
+
+  const handleMenuOpenChange = (id: string, open: boolean) => {
+    setMenuOpenId(open ? id : null)
+    if (!open) setItems((prev) => reorder(prev))
+  }
+
+  const handleRate = async (id: string, rating: number) => {
+    const prev = items.find((p) => p.id === id)?.rating ?? 0
+    if (prev === rating) return
+    patch(id, { rating })
+    try {
+      await personApi.rate(id, rating)
+    } catch (e: any) {
+      patch(id, { rating: prev })
+      toast.error(e.message || '打分失败')
+    }
+  }
+
+  const handleTogglePin = async (id: string) => {
+    const cur = items.find((p) => p.id === id)
+    if (!cur) return
+    const next = !cur.pinned
+    patch(id, { pinned: next })
+    try {
+      await personApi.pin(id, next)
+      toast.success(next ? '已固定到最前' : '已取消固定')
+    } catch (e: any) {
+      patch(id, { pinned: !next })
+      toast.error(e.message || '操作失败')
+    }
+  }
+
   return (
     <>
       <TopBar keyword={keyword} onKeyword={setKeyword} onAdd={() => setShowAdd(true)} />
@@ -95,6 +160,7 @@ export default function HomePage() {
             <SelectContent position="popper">
               <SelectItem value="created">添加日期</SelectItem>
               <SelectItem value="updated">修改日期</SelectItem>
+              <SelectItem value="rating">评分</SelectItem>
               <SelectItem value="nickname">昵称</SelectItem>
               <SelectItem value="media">媒体数量</SelectItem>
               <SelectItem value="firstMeet">首次见面</SelectItem>
@@ -140,7 +206,7 @@ export default function HomePage() {
               }`}
             >
               <AnimatePresence mode="popLayout">
-                {items.map((p, i) => (
+                {items.map((p) => (
                   <motion.div
                     key={p.id}
                     layout
@@ -149,7 +215,12 @@ export default function HomePage() {
                     exit={{ opacity: 0, scale: 0.94 }}
                     transition={{ type: 'spring', stiffness: 380, damping: 32, mass: 0.8 }}
                   >
-                    <PersonCard person={p} index={i} />
+                    <PersonCard
+                      person={p}
+                      onRate={handleRate}
+                      onTogglePin={handleTogglePin}
+                      onMenuOpenChange={handleMenuOpenChange}
+                    />
                   </motion.div>
                 ))}
               </AnimatePresence>

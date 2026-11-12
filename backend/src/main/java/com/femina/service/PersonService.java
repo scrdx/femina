@@ -101,6 +101,22 @@ public class PersonService {
         }
     }
 
+    /** 快捷打分（卡片右键菜单）：rating 取 0-5，0 表示清除评分 */
+    public void setRating(String id, Integer rating) {
+        requirePerson(id);
+        int r = rating == null ? 0 : rating;
+        if (r < 0 || r > 5) {
+            throw ApiException.badRequest("评分只能是 0-5，0 表示未评分");
+        }
+        personMapper.updateRating(id, r);
+    }
+
+    /** 固定 / 取消固定：固定后在列表里恒排最前，不参与排序 */
+    public void setPinned(String id, Boolean pinned) {
+        requirePerson(id);
+        personMapper.updatePinned(id, Boolean.TRUE.equals(pinned));
+    }
+
     /**
      * 删除人物档案。仅删除数据库记录（人物、账号、标签关联、媒体记录），
      * 绝不删除或修改用户的任何媒体文件。
@@ -166,6 +182,9 @@ public class PersonService {
         d.setCoverPath(p.getCoverPath());
         d.setCoverData(p.getCoverData());
         d.setRemarks(p.getRemarks());
+        // 归一化：实体里理论上不会是 null（列为 NOT NULL），但存量行迁移前后仍兜底一次
+        d.setRating(p.getRating() == null ? 0 : p.getRating());
+        d.setPinned(Boolean.TRUE.equals(p.getPinned()));
         d.setCreatedAt(p.getCreatedAt() == null ? null : p.getCreatedAt().toString());
 
         d.setAccounts(accountMapper.findByPerson(id).stream().map(a -> {
@@ -201,7 +220,7 @@ public class PersonService {
     /** 允许的排序字段（与 PersonMapper.xml 中 <choose> 白名单一致） */
     private static final Set<String> SORT_FIELDS =
             new HashSet<>(Arrays.asList("nickname", "created", "updated", "media",
-                    "firstMeet", "lastMeet"));
+                    "firstMeet", "lastMeet", "rating"));
 
     public PageResult<PersonSummary> search(String keyword, int page, int size,
                                             String sortBy, String sortDir) {
@@ -335,6 +354,19 @@ public class PersonService {
         // 封面被移除时裁剪结果一并失效
         person.setCoverData(person.getCoverPath() == null ? null : coverData);
         person.setRemarks(StringUtils.trimToNull(form.getRemarks()));
+        // 评分/固定：请求未带该字段（null）时保持原值，避免旧客户端全量更新把已打的星清零；
+        // 新建时实体里本来就是 null，兜底成 0/false（两列都是 NOT NULL）
+        Integer rating = form.getRating();
+        if (rating != null) {
+            person.setRating(rating);
+        } else if (person.getRating() == null) {
+            person.setRating(0);
+        }
+        if (form.getPinned() != null) {
+            person.setPinned(form.getPinned());
+        } else if (person.getPinned() == null) {
+            person.setPinned(false);
+        }
         // 封面必须位于媒体目录语义下（相对路径），去掉任何绝对路径/穿越写法
         if (person.getCoverPath() != null) {
             String cp = person.getCoverPath().replace('\\', '/');

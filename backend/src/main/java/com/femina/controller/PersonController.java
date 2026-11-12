@@ -26,6 +26,8 @@ import com.femina.model.dto.PersonDtos.PageResult;
 import com.femina.model.dto.PersonDtos.PersonDetail;
 import com.femina.model.dto.PersonDtos.PersonForm;
 import com.femina.model.dto.PersonDtos.PersonSummary;
+import com.femina.model.dto.PersonDtos.PinnedForm;
+import com.femina.model.dto.PersonDtos.RatingForm;
 import com.femina.service.PersonService;
 
 @RestController
@@ -68,6 +70,20 @@ public class PersonController {
     @PutMapping("/persons/{id}")
     public R<Void> update(@PathVariable String id, @Valid @RequestBody PersonForm form) {
         personService.update(id, form);
+        return R.ok();
+    }
+
+    /** 快捷打分（卡片右键菜单）：rating 取 0-5，0 表示清除评分 */
+    @PutMapping("/persons/{id}/rating")
+    public R<Void> rate(@PathVariable String id, @Valid @RequestBody RatingForm form) {
+        personService.setRating(id, form.getRating());
+        return R.ok();
+    }
+
+    /** 固定 / 取消固定：固定后在列表里恒排最前，不参与排序 */
+    @PutMapping("/persons/{id}/pinned")
+    public R<Void> pin(@PathVariable String id, @Valid @RequestBody PinnedForm form) {
+        personService.setPinned(id, form.getPinned());
         return R.ok();
     }
 

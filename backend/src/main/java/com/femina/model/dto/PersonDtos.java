@@ -5,7 +5,10 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
+import javax.validation.constraints.Max;
+import javax.validation.constraints.Min;
 import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
 
 import com.femina.model.Media;
@@ -59,8 +62,32 @@ public class PersonDtos {
         /** 备注，选填 */
         private String remarks;
 
+        /** 评分 1-5，0 表示未评分；null 表示本次请求不涉及该字段（更新时保持原值） */
+        @Min(value = 0, message = "评分不能小于 0")
+        @Max(value = 5, message = "评分不能大于 5")
+        private Integer rating;
+
+        /** 固定置顶；null 同上，更新时保持原值 */
+        private Boolean pinned;
+
         private List<AccountEntry> accounts = new ArrayList<>();
         private List<String> tags = new ArrayList<>();
+    }
+
+    /** 卡片右键「快捷打分」请求体：0 表示清除评分 */
+    @Data
+    public static class RatingForm {
+        @NotNull(message = "评分不能为空")
+        @Min(value = 0, message = "评分不能小于 0")
+        @Max(value = 5, message = "评分不能大于 5")
+        private Integer rating;
+    }
+
+    /** 卡片右键「固定/取消固定」请求体 */
+    @Data
+    public static class PinnedForm {
+        @NotNull(message = "pinned 不能为空")
+        private Boolean pinned;
     }
 
     /** 海报墙列表项（含翻卡背面所需的基本信息） */
@@ -80,6 +107,10 @@ public class PersonDtos {
         private BigDecimal weightKg;
         /** 媒体文件数（照片+视频），用于排序展示 */
         private Long mediaCount;
+        /** 评分 1-5，0 表示未评分（卡片左上角仅在 >0 时显示星星） */
+        private Integer rating;
+        /** 固定置顶：恒排列表最前，不参与排序 */
+        private Boolean pinned;
         private List<String> tags = new ArrayList<>();
         /** 首次/最近见面日期（无记录为 null），供首页排序 */
         private LocalDate firstMeet;
@@ -109,6 +140,10 @@ public class PersonDtos {
         private String coverPath;
         private String coverData;
         private String remarks;
+        /** 评分 1-5，0 表示未评分 */
+        private Integer rating;
+        /** 固定置顶 */
+        private Boolean pinned;
         private String createdAt;
         private List<AccountEntry> accounts = new ArrayList<>();
         private List<String> tags = new ArrayList<>();

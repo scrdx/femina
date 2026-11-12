@@ -4,9 +4,11 @@
 
     <insert id="insert" parameterType="com.femina.model.Person">
         INSERT INTO person (id, name, nickname, birth_date, birth_year, birth_year_only,
-                            hometown, education, height_cm, weight_kg, media_dir, cover_path, cover_data, remarks)
+                            hometown, education, height_cm, weight_kg, media_dir, cover_path, cover_data, remarks,
+                            rating, pinned)
         VALUES (#{id}, #{name}, #{nickname}, #{birthDate}, #{birthYear}, #{birthYearOnly},
-                #{hometown}, #{education}, #{heightCm}, #{weightKg}, #{mediaDir}, #{coverPath}, #{coverData}, #{remarks})
+                #{hometown}, #{education}, #{heightCm}, #{weightKg}, #{mediaDir}, #{coverPath}, #{coverData}, #{remarks},
+                #{rating}, #{pinned})
     </insert>
 
     <update id="update" parameterType="com.femina.model.Person">
@@ -23,14 +25,29 @@
             media_dir = #{mediaDir},
             cover_path = #{coverPath},
             cover_data = #{coverData},
-            remarks = #{remarks}
+            remarks = #{remarks},
+            rating = #{rating},
+            pinned = #{pinned}
         WHERE id = #{id}
     </update>
 
+    <!-- 快捷打分 / 固定：单字段更新，不走全量 update（全量更新要求整个 PersonForm）。
+         updated_at = updated_at 是显式赋值，用来抑制 ON UPDATE CURRENT_TIMESTAMP：
+         右键点一颗星不算「修改档案」，否则在「修改日期」排序下这个人会被莫名拽到最前。
+         弹窗保存走 update()，那条会正常刷新 updated_at。 -->
+    <update id="updateRating">
+        UPDATE person SET rating = #{rating}, updated_at = updated_at WHERE id = #{id}
+    </update>
+
+    <update id="updatePinned">
+        UPDATE person SET pinned = #{pinned}, updated_at = updated_at WHERE id = #{id}
+    </update>
+
+    <!-- 显式列清单：漏列会让全量 update 把该字段写成 NULL（rating/pinned 是 NOT NULL，会直接报错） -->
     <select id="findById" resultType="com.femina.model.Person">
         SELECT id, name, nickname, birth_date, birth_year, birth_year_only,
                hometown, education, height_cm, weight_kg, media_dir, cover_path, cover_data, remarks,
-               created_at, updated_at
+               rating, pinned, created_at, updated_at
         FROM person WHERE id = #{id}
     </select>
 
@@ -65,12 +82,15 @@
         SELECT p.id, p.name, p.nickname, p.cover_path, p.cover_data,
                p.birth_year_only, p.birth_date, p.birth_year,
                p.hometown, p.education, p.height_cm, p.weight_kg,
+               p.rating, p.pinned,
                (SELECT COUNT(*) FROM media m WHERE m.person_id = p.id) AS media_count,
                (SELECT MIN(mr.meet_date) FROM meet_record mr WHERE mr.person_id = p.id) AS first_meet,
                (SELECT MAX(mr.meet_date) FROM meet_record mr WHERE mr.person_id = p.id) AS last_meet
         FROM person p
         <include refid="searchWhere"/>
         ORDER BY
+        <!-- 固定的人恒排最前，且不参与后面的排序；pinned 是 0/1，DESC 即 1 在前 -->
+        p.pinned DESC,
         <choose>
             <when test="sortBy == 'nickname'">COALESCE(p.nickname, '')</when>
             <when test="sortBy == 'updated'">p.updated_at</when>
@@ -78,6 +98,8 @@
             <!-- 无见面记录的人恒垫底，方向只作用于日期本身 -->
             <when test="sortBy == 'firstMeet'">(first_meet IS NULL), first_meet</when>
             <when test="sortBy == 'lastMeet'">(last_meet IS NULL), last_meet</when>
+            <!-- 未评分（rating=0）恒垫底，方向只作用于评分本身 -->
+            <when test="sortBy == 'rating'">(p.rating = 0), p.rating</when>
             <otherwise>p.created_at</otherwise>
         </choose>
         <choose>

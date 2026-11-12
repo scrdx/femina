@@ -40,6 +40,7 @@ export type SortKey =
   | 'media'
   | 'firstMeet'
   | 'lastMeet'
+  | 'rating'
 export type SortDir = 'asc' | 'desc'
 
 export const personApi = {
@@ -58,6 +59,12 @@ export const personApi = {
   update: (id: string, form: PersonForm) => client.put<any, void>(`/persons/${id}`, form),
   remove: (id: string) => client.delete<any, void>(`/persons/${id}`),
   rescan: (id: string) => client.post<any, { count: number }>(`/persons/${id}/rescan`),
+  /** 快捷打分（卡片右键菜单）：rating 取 0-5，0 表示清除评分 */
+  rate: (id: string, rating: number) =>
+    client.put<any, void>(`/persons/${id}/rating`, { rating }),
+  /** 固定 / 取消固定：固定后在列表里恒排最前 */
+  pin: (id: string, pinned: boolean) =>
+    client.put<any, void>(`/persons/${id}/pinned`, { pinned }),
   /** 见面记录：列表 / 新增（date 可为 null）/ 删除 */
   meets: (id: string) => client.get<any, MeetRecord[]>(`/persons/${id}/meets`),
   addMeet: (id: string, meetDate: string | null) =>

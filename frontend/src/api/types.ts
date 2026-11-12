@@ -19,6 +19,10 @@ export interface PersonSummary {
   weightKg: number | null
   /** 媒体文件数（照片+视频） */
   mediaCount: number
+  /** 评分 1-5，0 表示未评分（卡片仅在 >0 时显示星星） */
+  rating: number
+  /** 固定置顶：恒排列表最前，不参与排序 */
+  pinned: boolean
   tags: string[]
 }
 
@@ -65,6 +69,10 @@ export interface PersonDetail {
   coverPath: string | null
   coverData: string | null
   remarks: string | null
+  /** 评分 1-5，0 表示未评分 */
+  rating: number
+  /** 固定置顶 */
+  pinned: boolean
   createdAt: string | null
   accounts: AccountEntry[]
   tags: string[]
@@ -93,6 +101,9 @@ export interface PersonForm {
   mediaDir: string
   coverPath: string
   coverData: string | null
+  /** 评分 1-5，0 表示未评分 */
+  rating: number
+  pinned: boolean
   accounts: AccountEntry[]
   tags: string[]
 }

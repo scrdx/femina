@@ -70,8 +70,11 @@ python scripts/smoke_test.py               # 后端 API 全流程冒烟
   存相对于 `person.media_dir` 的路径，`(person_id, rel_path)` 唯一。出生日期兼容"仅年份"
   （`birth_year_only` 标志）。派生数据只进数据库、不落盘：裁剪封面 `person.cover_data`、
   显示名/头像 `sys_user.display_name/avatar`（均 base64 data URL）。
-- 列表接口 `GET /api/persons` 支持 `sortBy`（nickname/created/updated/media）+ `sortDir`；
-  排序列在 `PersonMapper.xml` 用 `<choose>` 白名单映射为固定列名，Service 层再兜底校验。
+- 列表接口 `GET /api/persons` 支持 `sortBy`（nickname/created/updated/media/firstMeet/lastMeet/rating）
+  + `sortDir`；排序列在 `PersonMapper.xml` 用 `<choose>` 白名单映射为固定列名，Service 层再兜底校验。
+  `p.pinned DESC` 是无条件前导键：固定的人恒排最前、不参与排序；`rating` 排序时未评分（0）恒垫底。
+  人物带 `rating`（1-5，0=未评分）与 `pinned` 两列；卡片右键菜单可快捷打分/固定，走单字段更新
+  `PUT /api/persons/{id}/rating`、`PUT /api/persons/{id}/pinned`（不刷新 `updated_at`，不算「修改档案」）。
   `GET /api/persons/{id}/files?path=` 浏览人物目录（多级、含非媒体文件，`resolveInside` 限域）。
 
 ## 前端架构（frontend/src/）

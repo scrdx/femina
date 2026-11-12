@@ -26,14 +26,28 @@ export function hueOf(name: string): number {
   return baseBucket(name) * (360 / BUCKETS)
 }
 
-/** 为一组标签分配互不相同的色相（度）；仅适合小集合（≤ BUCKETS 个），超出会退化 */
+/**
+ * 为一组标签分配互不相同的色相（度）。
+ * 前 BUCKETS 个走「哈希桶 + 线性探测」，探测必须是有界的：桶占满后再用
+ * while (used.has(b)) 会在 12 个已占桶里无限绕圈，把渲染卡死。
+ * 超出部分按黄金角另给色相，既不与前面撞色，也不受 BUCKETS 上限约束。
+ */
 export function tagHues(names: string[]): Record<string, number> {
   const used = new Set<number>()
   const out: Record<string, number> = {}
   for (const n of names) {
     if (out[n] !== undefined) continue
     let b = baseBucket(n)
-    while (used.has(b)) b = (b + 1) % BUCKETS
+    let free = !used.has(b)
+    for (let step = 1; !free && step < BUCKETS; step++) {
+      b = (b + 1) % BUCKETS
+      free = !used.has(b)
+    }
+    if (!free) {
+      // 桶已满：黄金角（≈137.508°）递推，色相彼此拉开且不会重色
+      out[n] = (Object.keys(out).length * 137.508) % 360
+      continue
+    }
     used.add(b)
     out[n] = b * (360 / BUCKETS)
   }

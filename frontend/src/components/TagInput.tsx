@@ -11,14 +11,13 @@ interface Props {
   bare?: boolean
 }
 
-const MAX_SUGGESTIONS = 20
-
 /**
  * 标签输入：回车/逗号成标签，Backspace 删除末尾标签。
- * 聚焦即列出已有标签供点选（前缀命中排前），输入可过滤；
+ * 聚焦即列出全部已有标签供点选（前缀命中排前），输入可过滤；
  * 支持 ↑/↓ + 回车键盘选择，Esc 收起。
  * 候选面板用 Radix Popover 渲染：正确嵌套在弹窗（Dialog）的交互层内，
  * 鼠标可点、可滚动，且不会被弹窗的 overflow 裁剪。
+ * 不做条数截断：列表靠自身滚动承载，截断会让排在后面的标签「凭空消失」。
  */
 export default function TagInput({ value, onChange, allTags = [], bare }: Props) {
   const [text, setText] = useState('')
@@ -41,7 +40,7 @@ export default function TagInput({ value, onChange, allTags = [], bare }: Props)
           Number(!a.toLowerCase().startsWith(kw)) - Number(!b.toLowerCase().startsWith(kw))
       )
     }
-    return pool.slice(0, MAX_SUGGESTIONS)
+    return pool
   }, [allTags, text, value])
 
   const open = focused && suggestions.length > 0
@@ -162,11 +161,11 @@ export default function TagInput({ value, onChange, allTags = [], bare }: Props)
         <div
           ref={listRef}
           role="listbox"
-          className="max-h-[min(200px,calc(var(--radix-popover-content-available-height)-16px))] overflow-y-auto overflow-x-hidden"
+          className="max-h-[min(300px,calc(var(--radix-popover-content-available-height)-16px))] overflow-y-auto overflow-x-hidden"
         >
           {!text.trim() && (
             <div className="px-3 pb-1 pt-1.5 text-[11px] tracking-wide text-muted-foreground">
-              已有标签 · 点击或按回车选择
+              已有标签 {allTags.length} 个 · 滚动或输入筛选
             </div>
           )}
           {suggestions.map((s, i) => (

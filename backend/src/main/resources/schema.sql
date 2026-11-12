@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS person (
     cover_path       VARCHAR(512)          DEFAULT NULL,
     cover_data       MEDIUMTEXT            DEFAULT NULL COMMENT '裁剪后的封面，base64 data URL；不改动用户原文件',
     remarks          TEXT                  DEFAULT NULL,
+    rating           TINYINT      NOT NULL DEFAULT 0 COMMENT '评分 1-5，0 表示未评分',
+    pinned           TINYINT      NOT NULL DEFAULT 0 COMMENT '固定置顶：恒排列表最前，不参与排序',
     created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY idx_person_name (name),

@@ -34,7 +34,9 @@ export default function AccountEditor({ value, onChange }: Props) {
           key={i}
           className="flex h-8 items-stretch overflow-hidden rounded-lg border border-input bg-background transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30"
         >
-          <div className="flex w-[132px] shrink-0 border-r border-border bg-muted/40">
+          {/* 160px：扣掉内边距/间隔/chevron 后剩 ~118px 文字位，
+              能完整放下最长内置项「Telegram频道」及常见自定义类型 */}
+          <div className="flex w-[160px] shrink-0 border-r border-border bg-muted/40">
             <SelectMenu
               bare
               value={row.type}

@@ -1,10 +1,34 @@
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight, Pin, PinOff, Star } from 'lucide-react'
 import CardFlip from '@/components/kokonutui/card-flip'
+import PinnedFold from '@/components/PinnedFold'
+import StarRating, { starTone } from '@/components/StarRating'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 import { mediaThumbUrl } from '../api'
+import { cn } from '@/lib/utils'
 import { chipStyle, tagHues } from '@/lib/tagColor'
 import type { PersonSummary } from '../api/types'
+
+interface Props {
+  person: PersonSummary
+  /** 右键菜单「快捷打分」：rating 为 0 表示清除评分 */
+  onRate?: (id: string, rating: number) => void
+  /** 右键菜单「固定 / 取消固定」 */
+  onTogglePin?: (id: string) => void
+  /**
+   * 菜单开合上报。Radix 的右键菜单锚定在「点击那一刻的虚拟坐标点」上而不是卡片元素，
+   * 所以首页要把重排推迟到菜单收起，否则卡片会从打开的菜单底下滑走。
+   */
+  onMenuOpenChange?: (id: string, open: boolean) => void
+}
 
 function birthText(p: PersonSummary): string {
   if (p.birthYearOnly) return p.birthYear ? `${p.birthYear} 年` : '—'
@@ -26,9 +50,30 @@ function Field({ label, value }: { label: string; value: string }) {
 /**
  * 海报墙翻卡：正面封面海报，背面档案摘要。
  * 点击/拖拽卡片翻面；卡上的链接按钮进入详情页（不触发翻面）。
+ * 右键弹出快捷菜单（打分 / 固定）——CardFlip 的 onPointerDown 对 button!==0 早退，
+ * 所以右键不会误触发翻面。正面左上角显示评分星星（未评分不占位），
+ * 右上角详情按钮左侧显示固定图钉。
  */
-export default function PersonCard({ person }: { person: PersonSummary; index: number }) {
+export default function PersonCard({ person, onRate, onTogglePin, onMenuOpenChange }: Props) {
   const [imgOk, setImgOk] = useState(true)
+  const [menuOpen, setMenuOpen] = useState(false)
+  // 菜单里悬停/聚焦第 n 颗星时的预览：连同前面的星一起点亮
+  const [hoverStar, setHoverStar] = useState(0)
+  // 防御性兜底：滚动升级时旧后端可能不带这两个字段
+  const rating = person.rating ?? 0
+  const pinned = !!person.pinned
+  const shownStars = hoverStar || rating
+
+  // Radix 菜单的 roving focus 硬编码竖排，←/→ 在竖排菜单里是死键；
+  // 星级是横排的一组，这里自己接管左右键（Radix 对这两个键 return undefined，不冲突）
+  const onStarKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.defaultPrevented) return
+    e.preventDefault()
+    const nodes = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+    const i = nodes.indexOf(document.activeElement as HTMLElement)
+    if (i < 0) return
+    nodes[(i + (e.key === 'ArrowRight' ? 1 : -1) + nodes.length) % nodes.length]?.focus()
+  }
   // 裁剪版优先，其次原文件流
   // 海报墙用缩略图（后端未配置时 302 回退原图），避免整墙解码原图
   const coverSrc =
@@ -70,6 +115,21 @@ export default function PersonCard({ person }: { person: PersonSummary; index: n
           </div>
         )}
       </div>
+      {/* 固定标记：左上角折角，样式见 PinnedFold */}
+      {pinned && <PinnedFold />}
+      {/* 评分星星：只有评过分才出现，未评分的卡片左上角保持干净。
+          固定时右移让开折角。pointer-events-none 是必需的——角标盖在 CardFlip 上，
+          否则会吃掉点击/拖拽翻面 */}
+      {rating > 0 && (
+        <div
+          className={cn(
+            'pointer-events-none absolute top-3 flex items-center rounded-md border border-white/15 bg-black/30 px-1.5 py-1 backdrop-blur-[2px] [filter:drop-shadow(0_1px_3px_rgb(0_0_0/0.5))]',
+            pinned ? 'left-12' : 'left-3'
+          )}
+        >
+          <StarRating value={rating} onDark size={13} />
+        </div>
+      )}
       <Link
         to={`/person/${person.id}`}
         aria-label={`查看 ${display} 的详情`}
@@ -132,13 +192,64 @@ export default function PersonCard({ person }: { person: PersonSummary; index: n
   )
 
   return (
-    <div className="poster-card">
-      <CardFlip
-        label={`${display} 的档案卡`}
-        className="aspect-[2/3] w-full"
-        front={front}
-        back={back}
-      />
-    </div>
+    <ContextMenu
+      open={menuOpen}
+      onOpenChange={(o) => {
+        setMenuOpen(o)
+        if (!o) setHoverStar(0)
+        // 首页据此把重排推迟到菜单收起（菜单锚在虚拟坐标点上，不会跟着卡片走）
+        onMenuOpenChange?.(person.id, o)
+      }}
+    >
+      {/* Trigger 用 asChild 挂在普通 div 上：CardFlip 不转发 props/ref，接不住 Radix 注入的事件 */}
+      <ContextMenuTrigger asChild>
+        <div className="poster-card">
+          <CardFlip
+            label={`${display} 的档案卡`}
+            className="aspect-[2/3] w-full"
+            front={front}
+            back={back}
+          />
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="min-w-44">
+        {/* 5 颗星各自是一个 ContextMenuItem：只有 menuitem 才进 Radix 的 roving focus，
+            裸 button 用方向键够不着。onSelect 里 preventDefault 让菜单打分后不关闭，
+            可以连续调整，也正好和「再点一次当前星级即清除」配合。 */}
+        <ContextMenuGroup
+          aria-label="评分"
+          className="flex items-center gap-0.5 px-1.5 py-1"
+          onKeyDown={onStarKeyDown}
+        >
+          <span className="px-1 text-xs text-muted-foreground">评分</span>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <ContextMenuItem
+              key={n}
+              aria-label={rating === n ? `清除评分（当前 ${n} 星）` : `设为 ${n} 星`}
+              title={rating === n ? '再次点击清除评分' : `设为 ${n} 星`}
+              className="flex-none rounded-md p-1"
+              onMouseEnter={() => setHoverStar(n)}
+              onFocus={() => setHoverStar(n)}
+              onMouseLeave={() => setHoverStar(0)}
+              onBlur={() => setHoverStar(0)}
+              onSelect={(e) => {
+                e.preventDefault()
+                onRate?.(person.id, rating === n ? 0 : n)
+              }}
+            >
+              <Star
+                aria-hidden="true"
+                className={cn('size-4', starTone(n <= shownStars))}
+              />
+            </ContextMenuItem>
+          ))}
+        </ContextMenuGroup>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => onTogglePin?.(person.id)}>
+          {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+          <span>{pinned ? '取消固定' : '固定在最前'}</span>
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

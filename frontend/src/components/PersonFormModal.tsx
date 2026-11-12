@@ -20,6 +20,7 @@ import DateWheelPicker from './DateWheelPicker'
 import FileBrowser from './FileBrowser'
 import { FieldShell, ShellInput } from './FormField'
 import SmoothTab from '@/components/kokonutui/smooth-tab'
+import StarRating from './StarRating'
 import CropDialog from './CropDialog'
 import TagInput from './TagInput'
 
@@ -43,6 +44,10 @@ interface FormState {
   heightCm: string
   weightKg: string
   remarks: string
+  /** 评分 1-5，0 表示未评分 */
+  rating: number
+  /** 固定置顶：始终排在海报墙最前 */
+  pinned: boolean
   mediaDir: string
   coverPath: string
   coverData: string
@@ -55,6 +60,7 @@ function toFormState(p?: PersonDetail): FormState {
     return {
       name: '', nickname: '', birthYearOnly: false, birthDate: '', birthYear: '',
       hometown: '', education: '', heightCm: '', weightKg: '', remarks: '',
+      rating: 0, pinned: false,
       mediaDir: '', coverPath: '', coverData: '', accounts: [], tags: [],
     }
   }
@@ -69,6 +75,8 @@ function toFormState(p?: PersonDetail): FormState {
     heightCm: p.heightCm != null ? String(p.heightCm) : '',
     weightKg: p.weightKg != null ? String(p.weightKg) : '',
     remarks: p.remarks || '',
+    rating: p.rating ?? 0,
+    pinned: !!p.pinned,
     mediaDir: p.mediaDir || '',
     coverPath: p.coverPath || '',
     coverData: p.coverData || '',
@@ -144,6 +152,8 @@ export default function PersonFormModal({ mode, person, onClose, onSaved }: Prop
       heightCm: form.heightCm ? parseInt(form.heightCm, 10) : null,
       weightKg: form.weightKg ? parseFloat(form.weightKg) : null,
       remarks: form.remarks.trim(),
+      rating: form.rating,
+      pinned: form.pinned,
       mediaDir: form.mediaDir.trim(),
       coverPath: form.coverPath,
       coverData: form.coverData || null,
@@ -273,6 +283,39 @@ export default function PersonFormModal({ mode, person, onClose, onSaved }: Prop
                           <div className="col-span-2">
                             <FieldShell label="体重 kg">
                               <ShellInput type="number" min={0} max={300} step="0.1" value={form.weightKg} onChange={(e) => set('weightKg', e.target.value)} />
+                            </FieldShell>
+                          </div>
+                          {/* 第 4 行：评分 + 固定。点当前已选中的星级即清除评分 */}
+                          <div className="col-span-3">
+                            <FieldShell label="评分">
+                              <div className="flex min-w-0 flex-1 items-center gap-2.5 px-2.5">
+                                <StarRating
+                                  variant="input"
+                                  size={18}
+                                  value={form.rating}
+                                  onChange={(n) => set('rating', n)}
+                                />
+                                <span className="text-xs text-muted-foreground">
+                                  {form.rating ? `${form.rating} 星` : '未评分'}
+                                </span>
+                              </div>
+                            </FieldShell>
+                          </div>
+                          <div className="col-span-3">
+                            <FieldShell label="固定">
+                              <div className="flex min-w-0 flex-1 items-center gap-2.5 px-2.5">
+                                <Switch
+                                  id="pin-person"
+                                  checked={form.pinned}
+                                  onCheckedChange={(v) => set('pinned', v)}
+                                />
+                                <Label
+                                  htmlFor="pin-person"
+                                  className="cursor-pointer text-xs text-muted-foreground"
+                                >
+                                  始终排在海报墙最前
+                                </Label>
+                              </div>
                             </FieldShell>
                           </div>
                         </div>
