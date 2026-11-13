@@ -1,10 +1,16 @@
 package com.femina.controller;
 
+import java.io.IOException;
+import java.net.URLEncoder;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import javax.validation.Valid;
+
+import org.apache.commons.lang3.StringUtils;
 
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.femina.common.R;
 import com.femina.model.Media;
 import com.femina.model.MeetRecord;
+import com.femina.model.Person;
 import com.femina.model.Tag;
 import com.femina.model.dto.PersonDtos.FileNode;
 import com.femina.model.dto.PersonDtos.MeetForm;
@@ -29,15 +36,18 @@ import com.femina.model.dto.PersonDtos.PersonSummary;
 import com.femina.model.dto.PersonDtos.PinnedForm;
 import com.femina.model.dto.PersonDtos.RatingForm;
 import com.femina.service.PersonService;
+import com.femina.service.ThumbService;
 
 @RestController
 @RequestMapping("/api")
 public class PersonController {
 
     private final PersonService personService;
+    private final ThumbService thumbService;
 
-    public PersonController(PersonService personService) {
+    public PersonController(PersonService personService, ThumbService thumbService) {
         this.personService = personService;
+        this.thumbService = thumbService;
     }
 
     @GetMapping("/persons")
@@ -65,6 +75,40 @@ public class PersonController {
     @GetMapping("/persons/{id}")
     public R<PersonDetail> detail(@PathVariable String id) {
         return R.ok(personService.detail(id));
+    }
+
+    /**
+     * 封面图（供 &lt;img&gt; 直接引用，token 走 query 参数）：有裁剪封面时输出裁剪结果
+     * 并按 longEdge 降采样（配置了缩略图目录时带磁盘缓存），否则 302 到缩略图接口。
+     * 列表 JSON 不再内联 base64 封面——110 个人物时那会是几十 MB 的响应体。
+     */
+    @GetMapping("/persons/{id}/cover")
+    public void cover(@PathVariable String id,
+                      @RequestParam(defaultValue = "640") int longEdge,
+                      HttpServletRequest request,
+                      HttpServletResponse response) throws IOException {
+        Person person = personService.requirePerson(id);
+        int edge = ThumbService.normalizeEdge(longEdge);
+        byte[] crop = thumbService.renderCover(person, edge);
+        if (crop != null) {
+            response.setContentType("image/jpeg");
+            response.setHeader("Cache-Control", "private, max-age=604800");
+            response.getOutputStream().write(crop);
+            return;
+        }
+        // 无裁剪、或裁剪数据损坏解不开：降级到封面文件的缩略图
+        if (StringUtils.isNotBlank(person.getCoverPath())) {
+            String qs = "personId=" + URLEncoder.encode(id, "UTF-8")
+                    + "&path=" + URLEncoder.encode(person.getCoverPath(), "UTF-8")
+                    + "&longEdge=" + edge;
+            String token = request.getParameter("token");
+            if (token != null) {
+                qs += "&token=" + URLEncoder.encode(token, "UTF-8");
+            }
+            response.sendRedirect("/api/media/thumb?" + qs);
+            return;
+        }
+        response.sendError(HttpServletResponse.SC_NOT_FOUND);
     }
 
     @PutMapping("/persons/{id}")

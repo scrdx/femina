@@ -8,8 +8,6 @@ export interface PersonSummary {
   name: string
   nickname: string | null
   coverPath: string | null
-  /** 裁剪后封面 data URL，优先于 coverPath 显示 */
-  coverData: string | null
   birthYearOnly: boolean | null
   birthDate: string | null
   birthYear: number | null

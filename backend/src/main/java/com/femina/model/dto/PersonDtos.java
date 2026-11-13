@@ -90,14 +90,17 @@ public class PersonDtos {
         private Boolean pinned;
     }
 
-    /** 海报墙列表项（含翻卡背面所需的基本信息） */
+    /**
+     * 海报墙列表项（含翻卡背面所需的基本信息）。
+     * 注意：不带裁剪封面 base64（coverData）——110 个人物时那会让列表 JSON 涨到几十 MB；
+     * 封面统一走 GET /api/persons/{id}/cover（可按尺寸档降采样、可长缓存）。
+     */
     @Data
     public static class PersonSummary {
         private String id;
         private String name;
         private String nickname;
         private String coverPath;
-        private String coverData;
         private Boolean birthYearOnly;
         private java.time.LocalDate birthDate;
         private Integer birthYear;

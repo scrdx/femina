@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { mediaThumbUrl, mediaUrl, personApi } from '../api'
+import { coverUrl, mediaThumbUrl, mediaUrl, personApi } from '../api'
 import type { MediaItem, MediaSortKey, PersonDetail } from '../api/types'
 import AccountMenu from '../components/AccountMenu'
 import MeetRecordTable from '../components/MeetRecordTable'
@@ -346,8 +346,10 @@ export default function PersonDetailPage() {
           <div className="relative aspect-[2/3] max-w-[320px] overflow-hidden rounded-xl border border-border/80 bg-muted shadow-lg">
             {person.coverPath || person.coverData ? (
               <img
-                src={person.coverData || mediaUrl(person.id, person.coverPath!)}
+                // 与海报墙同源：裁剪结果或缩略图，1000 档足够 320px 宽的 hero（含高分屏）
+                src={coverUrl(person.id, 1000)}
                 alt={person.name}
+                decoding="async"
                 className="size-full object-cover"
               />
             ) : (

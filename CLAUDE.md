@@ -62,6 +62,12 @@ python scripts/smoke_test.py               # 后端 API 全流程冒烟
 - **媒体流**：`MediaController` 手写 HTTP Range（206）流式输出，保证视频可拖动；
   路径解析必须走 `util/FilePathUtil.resolveInside`（防目录穿越），文件严格限制在该人物的
   `media_dir` 内。`FsBrowseService` 提供服务器端目录浏览（选媒体目录/挑封面用），同样只读。
+- **封面/缩略图尺寸档**：封面统一走 `GET /api/persons/{id}/cover?longEdge=`（裁剪 `cover_data`
+  优先、否则缩略图；裁剪数据损坏时降级到封面文件），列表 JSON **不内联 base64 封面**
+  （110 人物时那是几十 MB 响应体）。`ThumbService` 按档位（320…1600）缓存缩略图，
+  海报墙用 640 档、详情 hero 用 1000 档；缺档时优先从已有大档降采样（比解码原图便宜一个
+  数量级），未配缩略图目录时即时降采样兜底——任何情况下海报墙都不再整墙拉原图。
+  缩略图/封面响应 `Cache-Control: private, max-age=604800`。
 - **建表/迁移**：`resources/schema.sql` 全幂等（CREATE TABLE IF NOT EXISTS），启动时由
   `config/SchemaInitializer` 执行。存量库的结构变更没有迁移工具——把幂等性无法用纯 SQL
   保证的 ALTER 追加到 `SchemaInitializer.BEST_EFFORT_MIGRATIONS` 数组（逐条执行、失败视为已应用）。

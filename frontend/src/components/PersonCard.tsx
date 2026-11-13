@@ -2,7 +2,6 @@ import { useState, type KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowUpRight, Pin, PinOff, Star } from 'lucide-react'
 import CardFlip from '@/components/kokonutui/card-flip'
-import PinnedFold from '@/components/PinnedFold'
 import StarRating, { starTone } from '@/components/StarRating'
 import {
   ContextMenu,
@@ -12,7 +11,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { mediaThumbUrl } from '../api'
+import { coverUrl } from '../api'
 import { cn } from '@/lib/utils'
 import { chipStyle, tagHues } from '@/lib/tagColor'
 import type { PersonSummary } from '../api/types'
@@ -74,10 +73,10 @@ export default function PersonCard({ person, onRate, onTogglePin, onMenuOpenChan
     if (i < 0) return
     nodes[(i + (e.key === 'ArrowRight' ? 1 : -1) + nodes.length) % nodes.length]?.focus()
   }
-  // 裁剪版优先，其次原文件流
-  // 海报墙用缩略图（后端未配置时 302 回退原图），避免整墙解码原图
-  const coverSrc =
-    person.coverData || (person.coverPath ? mediaThumbUrl(person.id, person.coverPath) : null)
+  // 封面统一走 /cover 接口：裁剪结果或缩略图，按 640 档降采样（后端未配置缩略图目录
+  // 且无裁剪时 302 回退原图）。列表 JSON 不再内联 base64 封面——110 个人物时那是
+  // 几十 MB 的响应体 + 110 次 base64/图像解码，海报墙掉帧的主因之一
+  const coverSrc = person.coverPath ? coverUrl(person.id) : null
   const hasCover = !!coverSrc && imgOk
   // 姓名可能未知：正面以昵称为准，昵称也缺省时才回退姓名
   const display = person.nickname || person.name || '佚名'
@@ -91,6 +90,7 @@ export default function PersonCard({ person, onRate, onTogglePin, onMenuOpenChan
           src={coverSrc!}
           alt={display}
           loading="lazy"
+          decoding="async"
           onError={() => setImgOk(false)}
           className="absolute inset-0 size-full object-cover"
         />
@@ -115,28 +115,42 @@ export default function PersonCard({ person, onRate, onTogglePin, onMenuOpenChan
           </div>
         )}
       </div>
-      {/* 固定标记：左上角折角，样式见 PinnedFold */}
-      {pinned && <PinnedFold />}
-      {/* 评分星星：只有评过分才出现，未评分的卡片左上角保持干净。
-          固定时右移让开折角。pointer-events-none 是必需的——角标盖在 CardFlip 上，
-          否则会吃掉点击/拖拽翻面 */}
-      {rating > 0 && (
-        <div
+      {/* 右上角贴边连体条，从右往左依次是 [查看详情][固定][星级]，前两段按需省略：
+          都没有时只剩贴边方块，固定时两连，评过分时三连。段间发丝线分隔，
+          最左一段的左下角用卡片同半径圆角（悬空的直角最突兀），相接处保持直角。
+          整条 pointer-events-none，只有 Link 重新打开指针事件——星星/图钉区不能吃掉翻面 */}
+      <div className="pointer-events-none absolute right-0 top-0 flex items-stretch">
+        {rating > 0 && (
+          // 星级在就一定是最左段，圆角恒加； pinned 只影响它右边还有没有图钉段
+          <div className="flex h-9 items-center rounded-bl-xl border-r border-white/10 bg-black/45 px-1.5">
+            <StarRating value={rating} onDark size={12} />
+          </div>
+        )}
+        {pinned && (
+          <div
+            role="img"
+            aria-label="已固定，恒排在最前"
+            title="已固定，恒排在最前"
+            className={cn(
+              'flex h-9 w-8 items-center justify-center border-r border-white/10 bg-black/45',
+              rating === 0 && 'rounded-bl-xl'
+            )}
+          >
+            <Pin className="size-3.5 text-white/85" />
+          </div>
+        )}
+        <Link
+          to={`/person/${person.id}`}
+          aria-label={`查看 ${display} 的详情`}
           className={cn(
-            'pointer-events-none absolute top-3 flex items-center rounded-md border border-white/15 bg-black/30 px-1.5 py-1 backdrop-blur-[2px] [filter:drop-shadow(0_1px_3px_rgb(0_0_0/0.5))]',
-            pinned ? 'left-12' : 'left-3'
+            'pointer-events-auto flex size-9 items-center justify-center bg-black/45 text-white transition-colors duration-200 hover:bg-black/65 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-white/70',
+            // 既没评分也没固定时，方块自己就是最左段，左下圆角同样要有
+            rating === 0 && !pinned && 'rounded-bl-xl'
           )}
         >
-          <StarRating value={rating} onDark size={13} />
-        </div>
-      )}
-      <Link
-        to={`/person/${person.id}`}
-        aria-label={`查看 ${display} 的详情`}
-        className="group/detail absolute right-3 top-3 flex size-9 items-center justify-center rounded-md border border-white/15 bg-black/30 text-white backdrop-blur-[2px] [filter:drop-shadow(0_1px_3px_rgb(0_0_0/0.5))] transition-all duration-300 hover:border-white/40 hover:bg-black/50 focus-visible:outline-2 focus-visible:outline-white/70"
-      >
-        <ArrowUpRight className="size-4 transition-transform duration-300 group-hover/detail:translate-x-px group-hover/detail:-translate-y-px" />
-      </Link>
+          <ArrowUpRight className="size-4" />
+        </Link>
+      </div>
     </div>
   )
 

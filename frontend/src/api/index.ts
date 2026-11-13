@@ -119,15 +119,33 @@ export function mediaUrl(personId: string, relPath: string): string {
 export const THUMB_LONG_EDGE = 1600
 
 /**
+ * 海报墙用的尺寸档：卡片只有 ~200-320px 宽，2x 屏也只要 ~640。
+ * 用 1600 档等于让浏览器解码 6 倍于显示尺寸的图，110 张卡时直接掉帧。
+ */
+export const WALL_LONG_EDGE = 640
+
+/**
  * 缩略图 URL：后端未配置缩略图目录 / 小图 / 生成失败时 302 回退原图，
  * 前端可无脑使用。图片墙与查看器适配态用它，避免解码 12–24MP 原图。
+ * longEdge 为尺寸档（后端吸附到固定档位），不传用后端默认 1600。
  */
-export function mediaThumbUrl(personId: string, relPath: string): string {
+export function mediaThumbUrl(personId: string, relPath: string, longEdge?: number): string {
   const token = getToken() || ''
   return (
     `/api/media/thumb?personId=${encodeURIComponent(personId)}` +
-    `&path=${encodeURIComponent(relPath)}&token=${encodeURIComponent(token)}`
+    `&path=${encodeURIComponent(relPath)}` +
+    (longEdge ? `&longEdge=${longEdge}` : '') +
+    `&token=${encodeURIComponent(token)}`
   )
+}
+
+/**
+ * 封面 URL：有裁剪封面时后端输出裁剪结果（按尺寸档降采样、可长缓存），
+ * 否则 302 到缩略图接口。列表 JSON 不再内联 base64 封面，封面一律走这里。
+ */
+export function coverUrl(personId: string, longEdge: number = WALL_LONG_EDGE): string {
+  const token = getToken() || ''
+  return `/api/persons/${encodeURIComponent(personId)}/cover?longEdge=${longEdge}&token=${encodeURIComponent(token)}`
 }
 
 /** 按绝对路径预览图片（创建/编辑时选封面用），只读。 */
